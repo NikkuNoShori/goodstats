@@ -1,7 +1,7 @@
 import { Box, Typography, Breadcrumbs, Link as MuiLink, Button } from '@mui/material';
 import { Link, useLocation } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
-import { AutoStories, Settings } from '@mui/icons-material';
+import { Settings } from '@mui/icons-material';
 import Logo from './Logo';
 import { supabase } from '../../services/supabase';
 import { useEffect, useState } from 'react';
@@ -35,13 +35,13 @@ const Header = ({ title, subtitle, showBreadcrumbs = true, isLandingPage = false
       <Box 
         sx={{ 
           borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-          py: 2,
-          px: 3,
+          py: 1.5,
+          px: 2,
         }}
       >
         <Box 
           sx={{ 
-            maxWidth: 'lg',
+            width: '100%',
             mx: 'auto',
             display: 'flex', 
             justifyContent: 'space-between',
@@ -85,25 +85,6 @@ const Header = ({ title, subtitle, showBreadcrumbs = true, isLandingPage = false
             <Box sx={{ display: 'flex', gap: 3 }}>
               <MuiLink 
                 component={Link} 
-                to="/dashboard"
-                sx={{ 
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  color: 'rgba(255, 255, 255, 0.7)',
-                  textDecoration: 'none',
-                  fontSize: '0.9rem',
-                  transition: 'all 0.2s',
-                  '&:hover': {
-                    color: theme.palette.primary.main
-                  }
-                }}
-              >
-                <AutoStories fontSize="small" />
-                Dashboard
-              </MuiLink>
-              <MuiLink 
-                component={Link} 
                 to="/settings"
                 sx={{ 
                   display: 'flex',
@@ -128,8 +109,8 @@ const Header = ({ title, subtitle, showBreadcrumbs = true, isLandingPage = false
 
       {/* Page Content Header */}
       {!isLandingPage && (
-        <Box sx={{ mb: 4, px: 3, pt: 4 }}>
-          <Box sx={{ maxWidth: 'lg', mx: 'auto' }}>
+        <Box sx={{ mb: 3, px: 2, pt: 3 }}>
+          <Box sx={{ width: '100%', mx: 'auto' }}>
             {showBreadcrumbs && pathnames.length > 0 && (
               <Breadcrumbs 
                 sx={{ 

@@ -151,11 +151,11 @@ const SignUpPage = () => {
 
   return (
     <Box sx={{ background: '#1a1f2e', minHeight: '100vh' }}>
-      <Header title="Sign Up" showBreadcrumbs={false} />
+      <Header showBreadcrumbs={false} title="" />
       
       <Box 
         sx={{ 
-          position: 'fixed',  // This will position relative to viewport
+          position: 'fixed',
           top: 0,
           left: 0,
           right: 0,
@@ -163,15 +163,37 @@ const SignUpPage = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          pointerEvents: 'none', // Allow clicking through to header
+          pointerEvents: 'none',
         }}
       >
-        <Container maxWidth="sm" sx={{ pointerEvents: 'auto' }}>
+        <Container maxWidth="sm" sx={{ 
+          pointerEvents: 'auto',
+          display: 'flex',
+          justifyContent: 'center',
+          px: 3,
+          py: 2,
+          backgroundColor: 'rgba(255, 255, 255, 0.02)',
+          borderRadius: 2,
+          backdropFilter: 'blur(8px)',
+          border: '1px solid',
+          borderColor: 'rgba(255, 255, 255, 0.1)'
+        }}>
           <Box sx={{ 
-            maxWidth: 400,
             width: '100%',
-            mx: 'auto',
+            maxWidth: 400,
           }}>
+            <Typography 
+              variant="h4" 
+              sx={{ 
+                color: 'white',
+                textAlign: 'center',
+                mb: 3,
+                fontWeight: 'bold'
+              }}
+            >
+              Sign Up
+            </Typography>
+
             {successMessage && (
               <Alert severity="success" sx={{ mb: 2 }}>
                 {successMessage}
@@ -199,15 +221,25 @@ const SignUpPage = () => {
                   onChange={handleChange}
                   required
                   disabled={isLoading}
+                  autoComplete="email"
+                  inputProps={{
+                    autoComplete: "email"
+                  }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       backgroundColor: 'rgba(255, 255, 255, 0.05)',
                       '&:hover': {
                         backgroundColor: 'rgba(255, 255, 255, 0.08)',
                       },
+                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#7e3af2',
+                      },
                     },
                     '& .MuiInputLabel-root': {
                       color: 'rgba(255, 255, 255, 0.7)',
+                      '&.Mui-focused': {
+                        color: '#7e3af2',
+                      },
                     },
                     '& .MuiOutlinedInput-input': {
                       color: 'white',
@@ -224,6 +256,9 @@ const SignUpPage = () => {
                   required
                   disabled={isLoading}
                   autoComplete="new-password"
+                  inputProps={{
+                    autoComplete: "new-password"
+                  }}
                   helperText="Must be at least 8 characters long"
                   sx={{
                     '& .MuiOutlinedInput-root': {
@@ -259,6 +294,9 @@ const SignUpPage = () => {
                   required
                   disabled={isLoading}
                   autoComplete="new-password"
+                  inputProps={{
+                    autoComplete: "new-password"
+                  }}
                   error={formData.password !== formData.confirmPassword && formData.confirmPassword !== ''}
                   helperText={
                     formData.password !== formData.confirmPassword && formData.confirmPassword !== '' 

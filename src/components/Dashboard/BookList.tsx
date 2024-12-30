@@ -38,7 +38,28 @@ const BookList = ({ books, isLoading }: BookListProps) => {
   }
 
   return (
-    <TableContainer component={Paper}>
+    <TableContainer 
+      component={Paper} 
+      sx={{ 
+        background: 'rgba(255, 255, 255, 0.02)',
+        backdropFilter: 'blur(10px)',
+        borderRadius: 3,
+        border: '1px solid rgba(255, 255, 255, 0.05)',
+        boxShadow: '0 4px 24px rgba(0, 0, 0, 0.1)',
+        '& .MuiTableCell-root': {
+          borderColor: 'rgba(255, 255, 255, 0.05)',
+          color: 'rgba(255, 255, 255, 0.7)',
+        },
+        '& .MuiTableHead-root .MuiTableCell-root': {
+          color: 'white',
+          fontWeight: 'bold',
+          background: 'rgba(255, 255, 255, 0.02)',
+        },
+        '& .MuiTableBody-root .MuiTableRow-root:hover': {
+          backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        },
+      }}
+    >
       <Table>
         <TableHead>
           <TableRow>
@@ -54,17 +75,34 @@ const BookList = ({ books, isLoading }: BookListProps) => {
             <TableRow key={book.id}>
               <TableCell>
                 {book.coverImage && (
-                  <img 
+                  <Box
+                    component="img" 
                     src={book.coverImage} 
                     alt={book.title}
-                    style={{ width: 50, height: 'auto' }}
+                    sx={{ 
+                      width: 50, 
+                      height: 'auto',
+                      borderRadius: 1,
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+                    }}
                   />
                 )}
               </TableCell>
-              <TableCell>{book.title}</TableCell>
+              <TableCell sx={{ fontWeight: 500, color: 'white' }}>{book.title}</TableCell>
               <TableCell>{book.author}</TableCell>
               <TableCell>
-                <Rating value={book.rating} readOnly />
+                <Rating 
+                  value={book.rating} 
+                  readOnly 
+                  sx={{
+                    '& .MuiRating-iconFilled': {
+                      color: '#7e3af2',
+                    },
+                    '& .MuiRating-iconEmpty': {
+                      color: 'rgba(255, 255, 255, 0.2)',
+                    },
+                  }}
+                />
               </TableCell>
               <TableCell>
                 {book.dateRead ? new Date(book.dateRead).toLocaleDateString() : 'Not set'}

@@ -43,7 +43,7 @@ const SignInPage = () => {
       if (error) {
         // Handle specific error cases
         if (error.message.includes('Email not confirmed')) {
-          const { data: resendData, error: resendError } = await supabase.auth.resend({
+          const { error: resendError } = await supabase.auth.resend({
             type: 'signup',
             email,
           });
@@ -87,7 +87,7 @@ const SignInPage = () => {
 
   return (
     <Box sx={{ background: '#1a1f2e', minHeight: '100vh' }}>
-      <Header title="Sign In" showBreadcrumbs={false} />
+      <Header showBreadcrumbs={false} title="" />
       
       <Box 
         sx={{ 
@@ -118,6 +118,18 @@ const SignInPage = () => {
             width: '100%',
             maxWidth: 400,
           }}>
+            <Typography 
+              variant="h4" 
+              sx={{ 
+                color: 'white',
+                textAlign: 'center',
+                mb: 3,
+                fontWeight: 'bold'
+              }}
+            >
+              Sign In
+            </Typography>
+
             {error && (
               <Alert 
                 severity="error" 
@@ -134,10 +146,15 @@ const SignInPage = () => {
                   fullWidth
                   label="Email"
                   type="email"
+                  name="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={isLoading}
+                  autoComplete="email"
+                  inputProps={{
+                    autoComplete: "email"
+                  }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       backgroundColor: 'rgba(255, 255, 255, 0.05)',
@@ -163,11 +180,15 @@ const SignInPage = () => {
                   fullWidth
                   label="Password"
                   type="password"
+                  name="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   disabled={isLoading}
-                  autoComplete="new-password"
+                  autoComplete="chrome-off"
+                  inputProps={{
+                    autoComplete: "chrome-off"
+                  }}
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       backgroundColor: 'rgba(255, 255, 255, 0.05)',
