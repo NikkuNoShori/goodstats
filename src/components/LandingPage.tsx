@@ -18,11 +18,10 @@ import {
   alpha,
 } from '@mui/material';
 import React from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 import { AppTheme } from '../theme/types';
 import { usePageTitle } from '../utils/usePageTitle';
-import Logo from './common/Logo';
 import Header from './common/Header';
 
 const FeatureCard: React.FC<{
@@ -85,7 +84,7 @@ const LandingPage: React.FC = () => {
 
   return (
     <Box sx={{ background: '#1a1f2e', minHeight: '100vh' }}>
-      <Header isLandingPage />
+      <Header isLandingPage title={''} />
       {/* Hero Section */}
       <Box
         sx={{

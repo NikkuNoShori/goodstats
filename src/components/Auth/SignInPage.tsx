@@ -43,7 +43,7 @@ const SignInPage = () => {
       if (error) {
         // Handle specific error cases
         if (error.message.includes('Email not confirmed')) {
-          const { data: resendData, error: resendError } = await supabase.auth.resend({
+          const { error: resendError } = await supabase.auth.resend({
             type: 'signup',
             email,
           });
@@ -55,6 +55,16 @@ const SignInPage = () => {
       }
 
       if (data.user) {
+        // Send token to extension if installed
+        try {
+          const extensionId = 'YOUR_EXTENSION_ID'; // Get this from chrome://extensions
+          chrome.runtime.sendMessage(extensionId, {
+            type: 'setToken',
+            token: data.session?.access_token
+          });
+        } catch (err) {
+          // Extension not installed, ignore
+        }
         navigate('/dashboard');
       }
     } catch (err) {
