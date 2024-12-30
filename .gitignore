@@ -1,0 +1,46 @@
+# Initialize new git repository
+git init
+
+# Create and update .gitignore (remove the PowerShell command from it)
+Set-Content .gitignore @"
+# Dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Production
+/build
+/dist
+
+# Misc
+.DS_Store
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+"@
+
+# Add all files
+git add .
+
+# Initial commit
+git commit -m "Initial commit: GoodStats application setup"

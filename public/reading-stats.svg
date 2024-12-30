@@ -1,0 +1,39 @@
+<svg width="600" height="400" viewBox="0 0 600 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Elements -->
+  <rect width="600" height="400" fill="#1E293B" opacity="0.1"/>
+  
+  <!-- Chart Elements -->
+  <g transform="translate(50, 50)">
+    <!-- Bar Chart -->
+    <rect x="50" y="200" width="40" height="100" fill="#7C3AED" opacity="0.8"/>
+    <rect x="100" y="150" width="40" height="150" fill="#9F67FF" opacity="0.8"/>
+    <rect x="150" y="100" width="40" height="200" fill="#EC4899" opacity="0.8"/>
+    <rect x="200" y="180" width="40" height="120" fill="#7C3AED" opacity="0.8"/>
+    
+    <!-- Line Chart -->
+    <path d="M300,200 L350,150 L400,180 L450,120" 
+          stroke="#EC4899" 
+          stroke-width="3"
+          fill="none"/>
+    
+    <!-- Pie Chart -->
+    <path d="M50,50 A40,40 0 1,1 90,50" 
+          fill="#7C3AED" 
+          opacity="0.8"/>
+    <path d="M50,50 A40,40 0 0,1 90,50" 
+          fill="#EC4899" 
+          opacity="0.8"/>
+  </g>
+  
+  <!-- Book Icons -->
+  <g transform="translate(400, 100)">
+    <rect x="0" y="0" width="20" height="100" fill="#7C3AED" opacity="0.8"/>
+    <rect x="30" y="20" width="20" height="80" fill="#9F67FF" opacity="0.8"/>
+    <rect x="60" y="40" width="20" height="60" fill="#EC4899" opacity="0.8"/>
+  </g>
+  
+  <!-- Decorative Elements -->
+  <circle cx="100" cy="350" r="5" fill="#7C3AED" opacity="0.5"/>
+  <circle cx="500" cy="50" r="8" fill="#EC4899" opacity="0.5"/>
+  <circle cx="300" cy="200" r="6" fill="#9F67FF" opacity="0.5"/>
+</svg> 
