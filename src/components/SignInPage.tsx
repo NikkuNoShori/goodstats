@@ -1,24 +1,69 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { goodreadsService } from '../services/goodreadsService';
+import { userService } from '../services/userService';
 import {
   Container,
   Box,
   Paper,
   Typography,
-  TextField,
   Button,
-  Divider,
+  TextField,
   Stack,
+  Divider,
   useTheme,
-  alpha
+  alpha,
+  CircularProgress,
+  Checkbox,
+  FormControlLabel,
+  Link as MuiLink,
 } from '@mui/material';
-import {
-  AdminPanelSettings,
-  LoginOutlined
-} from '@mui/icons-material';
+import { LoginOutlined, AutoStories } from '@mui/icons-material';
 import { AppTheme } from '../theme/types';
+import { usePageTitle } from '../utils/usePageTitle';
+import { Link } from 'react-router-dom';
+
+interface LocationState {
+  error?: string;
+}
 
 const SignInPage: React.FC = () => {
+  usePageTitle('Sign In');
   const theme = useTheme<AppTheme>();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
+  const location = useLocation();
+  const state = location.state as LocationState;
+
+  useEffect(() => {
+    if (state?.error) {
+      setError(state.error);
+    }
+  }, [state]);
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      // Implement email login logic here
+      navigate('/dashboard');
+    } catch (err) {
+      setError('Invalid email or password');
+    }
+  };
+
+  const handleGoodreadsLogin = async () => {
+    try {
+      const authUrl = await goodreadsService.initializeAuth();
+      window.location.href = authUrl;
+    } catch (err) {
+      setError('Failed to start authentication. Please try again.');
+    }
+  };
 
   return (
     <Box
@@ -35,124 +80,129 @@ const SignInPage: React.FC = () => {
           elevation={24}
           sx={{
             p: 4,
-            background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.background.paper, 0.8)} 100%)`,
+            background: alpha(theme.palette.background.paper, 0.4),
             backdropFilter: 'blur(10px)',
             border: '1px solid',
-            borderColor: 'primary.main',
+            borderColor: alpha(theme.palette.primary.main, 0.2),
             borderRadius: 2,
           }}
         >
-          <Stack spacing={4} alignItems="center">
-            <Typography
-              variant="h4"
-              fontWeight="bold"
-              sx={{
-                background: `linear-gradient(120deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
-                backgroundClip: 'text',
-                WebkitBackgroundClip: 'text',
-                color: 'transparent',
-              }}
-            >
-              Welcome Back
+          <Stack spacing={3}>
+            <Typography variant="h4" fontWeight="bold" textAlign="center">
+              Welcome to GoodStats
             </Typography>
 
-            <Stack spacing={3} sx={{ width: '100%' }}>
-              <TextField
-                fullWidth
-                label="Email"
-                variant="outlined"
-                sx={{
-                  '& .MuiOutlinedInput-root': {
-                    '& fieldset': {
-                      borderColor: alpha(theme.palette.primary.main, 0.2),
-                    },
-                    '&:hover fieldset': {
-                      borderColor: alpha(theme.palette.primary.main, 0.3),
-                    },
-                    '&.Mui-focused fieldset': {
-                      borderColor: theme.palette.primary.main,
-                    },
-                  },
-                }}
-              />
-              <TextField
-                fullWidth
-                label="Password"
-                type="password"
-                variant="outlined"
-                sx={{
-                  '& .MuiOutlinedInput-root': {
-                    '& fieldset': {
-                      borderColor: alpha(theme.palette.primary.main, 0.2),
-                    },
-                    '&:hover fieldset': {
-                      borderColor: alpha(theme.palette.primary.main, 0.3),
-                    },
-                    '&.Mui-focused fieldset': {
-                      borderColor: theme.palette.primary.main,
-                    },
-                  },
-                }}
-              />
-              <Button
-                variant="contained"
-                size="large"
-                fullWidth
-                sx={{
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                  py: 1.5,
-                }}
-              >
-                Sign In
-              </Button>
-            </Stack>
+            {error && (
+              <Typography color="error" align="center">
+                {error}
+              </Typography>
+            )}
 
-            <Box sx={{ width: '100%', position: 'relative', my: 2 }}>
-              <Divider>
-                <Typography 
-                  variant="body2" 
-                  sx={{ 
-                    color: 'text.secondary',
-                    px: 2,
+            <form onSubmit={handleEmailLogin}>
+              <Stack spacing={2}>
+                <TextField
+                  fullWidth
+                  label="Email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+                <TextField
+                  fullWidth
+                  label="Password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <Box sx={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center' 
+                }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox 
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        sx={{ 
+                          color: theme.palette.primary.main,
+                          '&.Mui-checked': {
+                            color: theme.palette.primary.main,
+                          },
+                        }}
+                      />
+                    }
+                    label="Remember me"
+                  />
+                  <MuiLink
+                    component={Link}
+                    to="/forgot-password"
+                    sx={{ 
+                      color: theme.palette.primary.main,
+                      textDecoration: 'none',
+                      '&:hover': { textDecoration: 'underline' },
+                    }}
+                  >
+                    Forgot password?
+                  </MuiLink>
+                </Box>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  size="large"
+                  fullWidth
+                  sx={{
+                    py: 1.5,
+                    background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
                   }}
                 >
-                  or continue with
-                </Typography>
-              </Divider>
+                  Sign In
+                </Button>
+              </Stack>
+            </form>
+
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                Don't have an account?{' '}
+                <MuiLink
+                  component={Link}
+                  to="/signup"
+                  sx={{ 
+                    color: theme.palette.primary.main,
+                    textDecoration: 'none',
+                    '&:hover': { textDecoration: 'underline' },
+                  }}
+                >
+                  Sign up
+                </MuiLink>
+              </Typography>
             </Box>
 
-            <Stack spacing={2} sx={{ width: '100%' }}>
-              <Button
-                variant="outlined"
-                size="large"
-                startIcon={<LoginOutlined />}
-                sx={{
-                  borderColor: alpha(theme.palette.primary.main, 0.5),
-                  color: 'text.primary',
-                  '&:hover': {
-                    borderColor: theme.palette.primary.main,
-                    background: alpha(theme.palette.primary.main, 0.05),
-                  },
-                }}
-              >
-                Sign in with Goodreads
-              </Button>
-              <Button
-                variant="outlined"
-                size="large"
-                startIcon={<AdminPanelSettings />}
-                sx={{
-                  borderColor: alpha(theme.palette.secondary.main, 0.5),
-                  color: 'text.primary',
-                  '&:hover': {
-                    borderColor: theme.palette.secondary.main,
-                    background: alpha(theme.palette.secondary.main, 0.05),
-                  },
-                }}
-              >
-                Admin Login
-              </Button>
-            </Stack>
+            <Divider sx={{ my: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                OR
+              </Typography>
+            </Divider>
+
+            <Button
+              variant="outlined"
+              size="large"
+              startIcon={isAuthenticating ? <CircularProgress size={20} /> : <AutoStories />}
+              onClick={handleGoodreadsLogin}
+              disabled={isAuthenticating}
+              sx={{
+                py: 1.5,
+                borderColor: alpha(theme.palette.primary.main, 0.3),
+                '&:hover': {
+                  borderColor: theme.palette.primary.main,
+                  background: alpha(theme.palette.primary.main, 0.05),
+                },
+              }}
+            >
+              {isAuthenticating ? 'Connecting...' : 'Connect with Goodreads'}
+            </Button>
           </Stack>
         </Paper>
       </Container>

@@ -31,10 +31,4 @@ yarn-error.log*
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?"@
-
-# Add all files
-git add .
-
-# Initial commit
-git commit -m "Initial commit: GoodStats application setup"
+*.sw?

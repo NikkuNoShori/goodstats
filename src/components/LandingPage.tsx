@@ -13,6 +13,7 @@ import {
 } from '@mui/icons-material';
 import { AppTheme } from '../theme/types';
 import { useNavigate } from 'react-router-dom';
+import { usePageTitle } from '../utils/usePageTitle';
 
 const FeatureCard: React.FC<{
   icon: React.ReactNode;
@@ -63,6 +64,7 @@ const FeatureCard: React.FC<{
 };
 
 const LandingPage: React.FC = () => {
+  usePageTitle('Welcome');
   const theme = useTheme<AppTheme>();
   const navigate = useNavigate();
 
