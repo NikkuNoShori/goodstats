@@ -1,42 +1,29 @@
 import React from 'react';
-import {
-  Container,
-  Paper,
-  Box,
-  Grid,
-  useTheme,
-  alpha,
-} from '@mui/material';
-import ProfileSettings from './ProfileSettings/index';
-import ConnectedAccounts from './ConnectedAccounts/index';
-import { AppTheme } from '../../theme/types';
+import { Container, Grid, Paper } from '@mui/material';
+import { PageHeader } from '../common/PageHeader';
+import { ProfileSettings } from './ProfileSettings';
+import { ConnectedAccounts } from './ConnectedAccounts';
 import { usePageTitle } from '../../utils/usePageTitle';
-import PageHeader from '../common/PageHeader';
+import { ErrorBoundary } from '../common/ErrorBoundary';
 
-const SettingsPage: React.FC = () => {
+export const SettingsPage: React.FC = () => {
   usePageTitle('Settings');
-  const theme = useTheme<AppTheme>();
 
   return (
-    <Box sx={{ 
-      minHeight: '100vh',
-      py: 4,
-      background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${theme.palette.background.paper} 100%)`
-    }}>
-      <Container maxWidth="lg">
-        <PageHeader />
-        
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <PageHeader title="Settings" />
+      <Grid container spacing={3}>
+        <Grid item xs={12} md={6}>
+          <ErrorBoundary>
             <ProfileSettings />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <ConnectedAccounts />
-          </Grid>
+          </ErrorBoundary>
         </Grid>
-      </Container>
-    </Box>
+        <Grid item xs={12} md={6}>
+          <ErrorBoundary>
+            <ConnectedAccounts />
+          </ErrorBoundary>
+        </Grid>
+      </Grid>
+    </Container>
   );
-};
-
-export default SettingsPage; 
+}; 

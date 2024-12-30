@@ -7,69 +7,69 @@ import {
   Button,
   Typography,
   Box,
-  useTheme,
+  LinearProgress,
+  List,
+  ListItem,
+  ListItemText,
 } from '@mui/material';
-import { AppTheme } from '../../../theme/types';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '../../../services/supabase';
 
 interface AccountInfoModalProps {
   open: boolean;
   onClose: () => void;
-  account: {
-    id: string;
-    provider: string;
-    email: string;
-    connected: string;
-    addedBy: string;
-    lastUsed: string;
-    tokenStatus: 'active' | 'expired';
-  };
 }
 
-const AccountInfoModal: React.FC<AccountInfoModalProps> = ({ open, onClose, account }) => {
-  const theme = useTheme<AppTheme>();
+export const AccountInfoModal: React.FC<AccountInfoModalProps> = ({ open, onClose }) => {
+  const { data: stats } = useQuery(
+    ['bookStats'],
+    async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+      
+      const { data } = await supabase.rpc('get_book_stats', { p_user_id: user.id });
+      return data;
+    },
+    { enabled: open }
+  );
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>
-        Connected Account Details
-      </DialogTitle>
+      <DialogTitle>Account Information</DialogTitle>
       <DialogContent>
-        <Box sx={{ py: 2 }}>
-          <Typography variant="subtitle2" color="text.secondary">Provider</Typography>
-          <Typography variant="body1" sx={{ mb: 2 }}>{account.provider}</Typography>
-
-          <Typography variant="subtitle2" color="text.secondary">Email</Typography>
-          <Typography variant="body1" sx={{ mb: 2 }}>{account.email}</Typography>
-
-          <Typography variant="subtitle2" color="text.secondary">Connected On</Typography>
-          <Typography variant="body1" sx={{ mb: 2 }}>
-            {new Date(account.connected).toLocaleDateString()}
-          </Typography>
-
-          <Typography variant="subtitle2" color="text.secondary">Added By</Typography>
-          <Typography variant="body1" sx={{ mb: 2 }}>{account.addedBy}</Typography>
-
-          <Typography variant="subtitle2" color="text.secondary">Last Used</Typography>
-          <Typography variant="body1" sx={{ mb: 2 }}>
-            {new Date(account.lastUsed).toLocaleDateString()}
-          </Typography>
-
-          <Typography variant="subtitle2" color="text.secondary">Token Status</Typography>
-          <Typography 
-            variant="body1" 
-            sx={{ 
-              color: account.tokenStatus === 'active' ? 'success.main' : 'error.main'
-            }}
-          >
-            {account.tokenStatus.charAt(0).toUpperCase() + account.tokenStatus.slice(1)}
-          </Typography>
-        </Box>
+        <List>
+          <ListItem>
+            <ListItemText 
+              primary="Total Books" 
+              secondary={stats?.total_books || 0} 
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemText 
+              primary="Books Read This Year" 
+              secondary={stats?.books_this_year || 0} 
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemText 
+              primary="Average Rating" 
+              secondary={stats?.avg_rating?.toFixed(1) || 'N/A'} 
+            />
+          </ListItem>
+          <ListItem>
+            <ListItemText 
+              primary="Last Sync" 
+              secondary={stats?.last_sync 
+                ? new Date(stats.last_sync).toLocaleString()
+                : 'Never'
+              } 
+            />
+          </ListItem>
+        </List>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
     </Dialog>
   );
-};
-
-export default AccountInfoModal; 
+}; 

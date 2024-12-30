@@ -39,6 +39,7 @@ const SignInPage: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(false);
   const location = useLocation();
   const state = location.state as LocationState;
+  const [isGoodreadsLoading, setIsGoodreadsLoading] = useState(false);
 
   useEffect(() => {
     if (state?.error) {
@@ -58,10 +59,12 @@ const SignInPage: React.FC = () => {
 
   const handleGoodreadsLogin = async () => {
     try {
+      setIsGoodreadsLoading(true);
       const authUrl = await goodreadsService.initializeAuth();
       window.location.href = authUrl;
     } catch (err) {
       setError('Failed to start authentication. Please try again.');
+      setIsGoodreadsLoading(false);
     }
   };
 
@@ -189,9 +192,9 @@ const SignInPage: React.FC = () => {
             <Button
               variant="outlined"
               size="large"
-              startIcon={isAuthenticating ? <CircularProgress size={20} /> : <AutoStories />}
+              startIcon={isGoodreadsLoading ? <CircularProgress size={20} /> : <AutoStories />}
               onClick={handleGoodreadsLogin}
-              disabled={isAuthenticating}
+              disabled={isGoodreadsLoading}
               sx={{
                 py: 1.5,
                 borderColor: alpha(theme.palette.primary.main, 0.3),
@@ -201,7 +204,7 @@ const SignInPage: React.FC = () => {
                 },
               }}
             >
-              {isAuthenticating ? 'Connecting...' : 'Connect with Goodreads'}
+              {isGoodreadsLoading ? 'Connecting...' : 'Connect with Goodreads'}
             </Button>
           </Stack>
         </Paper>

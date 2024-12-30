@@ -1,75 +1,60 @@
-import bcrypt from 'bcrypt';
-
-interface UserProfile {
-  id: string;
-  goodreadsId: string;
-  accessToken: string;
-  refreshToken: string;
-  tokenExpiry: number;
-  email?: string;
-  passwordHash?: string;
-}
-
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-}
+import { supabase, Profile } from './supabase';
 
 export const userService = {
-  getProfile(): UserProfile | null {
-    const profile = localStorage.getItem('user_profile');
-    return profile ? JSON.parse(profile) : null;
+  signUp: async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+    if (error) throw error;
+    return data;
   },
 
-  setProfile(profile: UserProfile): void {
-    localStorage.setItem('user_profile', JSON.stringify(profile));
+  signIn: async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) throw error;
+    return data;
   },
 
-  clearProfile(): void {
-    localStorage.removeItem('user_profile');
+  signOut: async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
   },
 
-  isAuthenticated(): boolean {
-    const profile = this.getProfile();
-    if (!profile) return false;
-    return Date.now() < profile.tokenExpiry;
+  getProfile: async (): Promise<Profile | null> => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return null;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (error) throw error;
+    return data;
   },
 
-  hasGoodreadsToken(): boolean {
-    const profile = this.getProfile();
-    return !!profile?.accessToken;
+  updateProfile: async (profile: Partial<Profile>) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Not authenticated');
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(profile)
+      .eq('id', user.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
   },
 
-  getGoodreadsToken(): string | null {
-    return this.getProfile()?.accessToken || null;
-  },
-
-  removeGoodreadsToken(): void {
-    const profile = this.getProfile();
-    if (profile) {
-      delete profile.accessToken;
-      delete profile.refreshToken;
-      this.setProfile(profile);
-    }
-  },
-
-  updateEmail: async (email: string): Promise<void> => {
-    const profile = userService.getProfile();
-    if (!profile) throw new Error('No user profile found');
-    
-    profile.email = email;
-    userService.setProfile(profile);
-  },
-
-  updatePassword: async (password: string): Promise<void> => {
-    const profile = userService.getProfile();
-    if (!profile) throw new Error('No user profile found');
-    
-    profile.passwordHash = await hashPassword(password);
-    userService.setProfile(profile);
+  getGoodreadsToken: async () => {
+    const profile = await userService.getProfile();
+    return profile?.goodreads_token;
   }
 }; 
