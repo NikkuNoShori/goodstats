@@ -1,8 +1,8 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { Box, Typography, Button, Container } from '@mui/material';
+import { Box, Typography, Button } from '@mui/material';
+import React, { Component, ErrorInfo } from 'react';
 
 interface Props {
-  children: ReactNode;
+  children: React.ReactNode;
 }
 
 interface State {
@@ -10,46 +10,48 @@ interface State {
   error?: Error;
 }
 
-class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false
-  };
+export class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
-  public static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
   }
 
-  public render() {
+  handleReset = () => {
+    this.setState({ hasError: false, error: undefined });
+  };
+
+  render() {
     if (this.state.hasError) {
       return (
-        <Container>
-          <Box
-            sx={{
-              minHeight: '100vh',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              textAlign: 'center',
-              gap: 2
-            }}
-          >
-            <Typography variant="h4">Something went wrong</Typography>
-            <Typography color="text.secondary">
-              {this.state.error?.message || 'An unexpected error occurred'}
-            </Typography>
-            <Button
-              variant="contained"
-              onClick={() => window.location.reload()}
-            >
-              Reload Page
-            </Button>
-          </Box>
-        </Container>
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '100vh',
+            p: 3,
+            textAlign: 'center',
+          }}
+        >
+          <Typography variant="h5" gutterBottom>
+            Something went wrong
+          </Typography>
+          <Typography color="text.secondary" sx={{ mb: 3 }}>
+            {this.state.error?.message || 'An unexpected error occurred'}
+          </Typography>
+          <Button variant="contained" onClick={this.handleReset}>
+            Try Again
+          </Button>
+        </Box>
       );
     }
 
@@ -57,4 +59,4 @@ class ErrorBoundary extends Component<Props, State> {
   }
 }
 
-export default ErrorBoundary; 
+export default ErrorBoundary;

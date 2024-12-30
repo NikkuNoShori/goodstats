@@ -8,4 +8,4 @@ export const usePageTitle = (title: string) => {
       document.title = previousTitle;
     };
   }, [title]);
-}; 
+};

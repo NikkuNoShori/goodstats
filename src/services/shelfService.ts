@@ -43,7 +43,7 @@ export const shelfService = {
       popularGenres: [],
       authorStats: [],
       publishingYears: [],
-      lengthDistribution: []
+      lengthDistribution: [],
     };
   },
 
@@ -56,7 +56,7 @@ export const shelfService = {
       contentWarnings: ['violence', 'death'],
       representation: ['LGBTQ+', 'POC'],
       format: 'paperback' | 'hardcover' | 'ebook',
-      readingDifficulty: 'easy' | 'medium' | 'hard'
+      readingDifficulty: 'easy' | 'medium' | 'hard',
     };
-  }
-}; 
+  },
+};

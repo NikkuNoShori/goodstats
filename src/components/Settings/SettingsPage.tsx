@@ -1,29 +1,32 @@
-import React from 'react';
-import { Container, Grid, Paper } from '@mui/material';
-import { PageHeader } from '../common/PageHeader';
-import { ProfileSettings } from './ProfileSettings';
-import { ConnectedAccounts } from './ConnectedAccounts';
-import { usePageTitle } from '../../utils/usePageTitle';
-import { ErrorBoundary } from '../common/ErrorBoundary';
+import { Container, Box } from '@mui/material';
 
-export const SettingsPage: React.FC = () => {
+import { usePageTitle } from '../../utils/usePageTitle';
+import ErrorBoundary from '../common/ErrorBoundary';
+import Header from '../common/Header';
+import ProfileSettings from './ProfileSettings';
+
+const SettingsPage = () => {
   usePageTitle('Settings');
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <PageHeader title="Settings" />
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <ErrorBoundary>
-            <ProfileSettings />
-          </ErrorBoundary>
-        </Grid>
-        <Grid item xs={12} md={6}>
-          <ErrorBoundary>
-            <ConnectedAccounts />
-          </ErrorBoundary>
-        </Grid>
-      </Grid>
-    </Container>
+    <Box
+      sx={{
+        minHeight: '100vh',
+        background: '#1a1f2e',
+        pt: 4,
+      }}
+    >
+      <Container maxWidth="lg">
+        <Header 
+          title="Settings" 
+          subtitle="Manage your account and preferences"
+        />
+        <ErrorBoundary>
+          <ProfileSettings />
+        </ErrorBoundary>
+      </Container>
+    </Box>
   );
-}; 
+};
+
+export default SettingsPage;

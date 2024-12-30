@@ -1,310 +1,339 @@
-import React, { useState, useEffect } from 'react';
 import {
-  Container, Box, Paper, Typography, Button, TextField,
-  Stack, useTheme, alpha, Link as MuiLink, Alert, Grow, Fade
+  Box,
+  Typography,
+  Button,
+  TextField,
+  Stack,
+  useTheme,
+  CircularProgress,
+  Link as MuiLink,
+  Alert,
+  Container,
 } from '@mui/material';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+
+import { supabase } from '../../services/supabase';
 import { AppTheme } from '../../theme/types';
 import { usePageTitle } from '../../utils/usePageTitle';
-import { validateEmail, validatePassword } from '../../utils/validation';
-import { secureStorage } from '../../utils/storage';
+import Header from '../common/Header';
 
-interface FormErrors {
-  email?: string[];
-  password?: string[];
-  confirmPassword?: string[];
+interface AuthError {
+  message: string;
+  status?: number;
 }
 
-const STORAGE_KEY = 'signup_form_data';
-
-const SignUpPage: React.FC = () => {
+const SignUpPage = () => {
   usePageTitle('Sign Up');
   const theme = useTheme<AppTheme>();
   const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [formErrors, setFormErrors] = useState<FormErrors>({});
-  const [verificationSent, setVerificationSent] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
   });
-  const [resendTimeout, setResendTimeout] = useState<number>(0);
-  const emailRef = React.useRef<HTMLInputElement>(null);
 
-  // Load saved form data with encryption
-  useEffect(() => {
-    const savedData = secureStorage.get(STORAGE_KEY);
-    if (savedData) {
-      setFormData(savedData);
-    }
-  }, []);
-
-  // Save form data with encryption
-  useEffect(() => {
-    secureStorage.set(STORAGE_KEY, formData);
-  }, [formData]);
-
-  // Autofocus email field
-  useEffect(() => {
-    emailRef.current?.focus();
-  }, []);
-
-  // Keyboard navigation
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      const form = e.currentTarget.closest('form');
-      if (form) {
-        const inputs = Array.from(form.querySelectorAll('input'));
-        const index = inputs.indexOf(e.target as HTMLInputElement);
-        if (index < inputs.length - 1) {
-          e.preventDefault();
-          inputs[index + 1].focus();
-        }
-      }
-    }
-  };
-
-  // Real-time validation
-  useEffect(() => {
-    const debounceTimeout = setTimeout(() => {
-      if (formData.email || formData.password || formData.confirmPassword) {
-        validateForm();
-      }
-    }, 500);
-
-    return () => clearTimeout(debounceTimeout);
-  }, [formData]);
-
-  const validateForm = (): boolean => {
-    const errors: FormErrors = {};
-    let isValid = true;
-
-    // Email validation
-    if (!validateEmail(formData.email)) {
-      errors.email = ['Please enter a valid email address'];
-      isValid = false;
-    }
-
-    // Password validation
-    const passwordValidation = validatePassword(formData.password);
-    if (!passwordValidation.isValid) {
-      errors.password = passwordValidation.errors;
-      isValid = false;
-    }
-
-    // Confirm password validation
-    if (formData.password !== formData.confirmPassword) {
-      errors.confirmPassword = ['Passwords do not match'];
-      isValid = false;
-    }
-
-    setFormErrors(errors);
-    return isValid;
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-
-    if (!validateForm()) {
-      return;
-    }
+    setSuccessMessage(null);
+    setIsLoading(true);
 
     try {
-      // Implement signup logic here
-      // After successful signup, send verification email
-      setVerificationSent(true);
-    } catch (err) {
-      setError('Failed to create account');
-    }
-  };
+      if (!formData.email) {
+        throw new Error('Email is required');
+      }
 
-  const handleResendVerification = async () => {
-    try {
-      // Implement resend verification logic here
-      setResendTimeout(60); // Start 60 second countdown
-      const countdownInterval = setInterval(() => {
-        setResendTimeout(prev => {
-          if (prev <= 1) {
-            clearInterval(countdownInterval);
-            return 0;
+      if (!formData.email.includes('@')) {
+        throw new Error('Please enter a valid email address');
+      }
+
+      if (formData.password !== formData.confirmPassword) {
+        throw new Error('Passwords do not match');
+      }
+
+      if (formData.password.length < 8) {
+        throw new Error('Password must be at least 8 characters long');
+      }
+
+      const hasUpperCase = /[A-Z]/.test(formData.password);
+      const hasLowerCase = /[a-z]/.test(formData.password);
+      const hasNumbers = /\d/.test(formData.password);
+      
+      if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
+        throw new Error('Password must contain at least one uppercase letter, one lowercase letter, and one number');
+      }
+
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+      });
+
+      if (signUpError) {
+        const error = signUpError as AuthError;
+        switch (error.message) {
+          case 'User already registered':
+            throw new Error('This email is already registered. Please sign in instead.');
+          case 'Password should be at least 6 characters':
+            throw new Error('Password must be at least 6 characters long');
+          case 'Unable to validate email address: invalid format':
+            throw new Error('Please enter a valid email address');
+          case 'Password is too weak':
+            throw new Error('Please choose a stronger password');
+          case 'Rate limit exceeded':
+            throw new Error('Too many attempts. Please try again later.');
+          case 'Network error':
+            throw new Error('Network error. Please check your internet connection.');
+          default:
+            console.error('Unexpected signup error:', error);
+            throw new Error(error.message || 'Failed to create account');
+        }
+      }
+
+      if (!authData.user) {
+        throw new Error('No user data returned');
+      }
+
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert([
+          {
+            id: authData.user.id,
+            email: authData.user.email,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            email_confirmed: false,
           }
-          return prev - 1;
+        ]);
+
+      if (profileError) {
+        console.error('Profile creation error:', profileError);
+        if (profileError.message.includes('duplicate key')) {
+          throw new Error('An account with this email already exists');
+        }
+        throw new Error('Failed to create user profile');
+      }
+
+      setSuccessMessage('Account created successfully! Please check your email to verify your account.');
+      
+      setTimeout(() => {
+        navigate('/dashboard', { 
+          state: { 
+            emailPending: true,
+            message: 'Please verify your email to access all features'
+          }
         });
-      }, 1000);
+      }, 3000);
+
     } catch (err) {
-      setError('Failed to resend verification email');
+      console.error('Sign up error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to sign up');
+      setFormData(prev => ({
+        ...prev,
+        password: '',
+        confirmPassword: '',
+      }));
+    } finally {
+      setIsLoading(false);
     }
-  };
-
-  // Clean up saved data after successful verification
-  useEffect(() => {
-    if (verificationSent) {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  }, [verificationSent]);
-
-  if (verificationSent) {
-    return (
-      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center',
-        background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${theme.palette.background.paper} 100%)`,
-        py: 4 }}>
-        <Container maxWidth="sm">
-          <Paper elevation={24} sx={{ p: 4, background: alpha(theme.palette.background.paper, 0.4),
-            backdropFilter: 'blur(10px)', borderRadius: 2 }}>
-            <Stack spacing={3} alignItems="center">
-              <Typography variant="h4" fontWeight="bold">
-                Verify Your Email
-              </Typography>
-              <Typography align="center" color="text.secondary">
-                We've sent a verification link to {formData.email}. 
-                Please check your email and click the link to activate your account.
-              </Typography>
-              <MuiLink component={Link} to="/signin"
-                sx={{ color: theme.palette.primary.main }}>
-                Return to sign in
-              </MuiLink>
-              <Box sx={{ mt: 2 }}>
-                <Button
-                  variant="text"
-                  onClick={handleResendVerification}
-                  disabled={resendTimeout > 0}
-                  sx={{ color: theme.palette.primary.main }}
-                >
-                  {resendTimeout > 0 
-                    ? `Resend in ${resendTimeout}s` 
-                    : 'Resend verification email'}
-                </Button>
-              </Box>
-            </Stack>
-          </Paper>
-        </Container>
-      </Box>
-    );
-  }
-
-  const handleChange = (field: keyof typeof formData) => (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const newFormData = {
-      ...formData,
-      [field]: e.target.value
-    };
-    setFormData(newFormData);
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center',
-      background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${theme.palette.background.paper} 100%)`,
-      py: 4 }}>
-      <Container maxWidth="sm">
-        <Paper elevation={24} sx={{ p: 4, background: alpha(theme.palette.background.paper, 0.4),
-          backdropFilter: 'blur(10px)', borderRadius: 2 }}>
-          <Stack spacing={3}>
-            <Typography variant="h4" fontWeight="bold" textAlign="center">
-              Create Account
-            </Typography>
-
+    <Box sx={{ background: '#1a1f2e', minHeight: '100vh' }}>
+      <Header title="Sign Up" showBreadcrumbs={false} />
+      
+      <Box 
+        sx={{ 
+          position: 'fixed',  // This will position relative to viewport
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          pointerEvents: 'none', // Allow clicking through to header
+        }}
+      >
+        <Container maxWidth="sm" sx={{ pointerEvents: 'auto' }}>
+          <Box sx={{ 
+            maxWidth: 400,
+            width: '100%',
+            mx: 'auto',
+          }}>
+            {successMessage && (
+              <Alert severity="success" sx={{ mb: 2 }}>
+                {successMessage}
+              </Alert>
+            )}
+            
             {error && (
-              <Typography color="error" align="center">{error}</Typography>
+              <Alert 
+                severity="error"
+                sx={{ mb: 2 }}
+                onClose={() => setError(null)}
+              >
+                {error}
+              </Alert>
             )}
 
             <form onSubmit={handleSubmit}>
-              <Stack spacing={2}>
-                <Grow in={true} timeout={500}>
-                  <TextField
-                    inputRef={emailRef}
-                    fullWidth
-                    label="Email"
-                    type="email"
-                    required
-                    value={formData.email}
-                    onChange={handleChange('email')}
-                    error={!!formErrors.email}
-                    helperText={
-                      <Fade in={!!formErrors.email}>
-                        <span>{formErrors.email?.[0]}</span>
-                      </Fade>
-                    }
-                    onKeyDown={handleKeyDown}
-                  />
-                </Grow>
-                <Grow in={true} timeout={700}>
-                  <TextField
-                    fullWidth
-                    label="Password"
-                    type="password"
-                    required
-                    value={formData.password}
-                    onChange={handleChange('password')}
-                    error={!!formErrors.password}
-                    helperText={
-                      <Fade in={!!formErrors.password}>
-                        <span>{formErrors.password?.[0]}</span>
-                      </Fade>
-                    }
-                    onKeyDown={handleKeyDown}
-                  />
-                </Grow>
-                {formErrors.password && formErrors.password.length > 1 && (
-                  <Fade in={true}>
-                    <Alert severity="info" sx={{ mt: 1 }}>
-                      <Typography variant="body2">Password must:</Typography>
-                      <ul style={{ margin: '4px 0' }}>
-                        {formErrors.password.map((error, index) => (
-                          <li key={index}>{error}</li>
-                        ))}
-                      </ul>
-                    </Alert>
-                  </Fade>
-                )}
-                <Grow in={true} timeout={900}>
-                  <TextField
-                    fullWidth
-                    label="Confirm Password"
-                    type="password"
-                    required
-                    value={formData.confirmPassword}
-                    onChange={handleChange('confirmPassword')}
-                    error={!!formErrors.confirmPassword}
-                    helperText={
-                      <Fade in={!!formErrors.confirmPassword}>
-                        <span>{formErrors.confirmPassword?.[0]}</span>
-                      </Fade>
-                    }
-                    onKeyDown={handleKeyDown}
-                  />
-                </Grow>
-                <Grow in={true} timeout={1100}>
-                  <Button 
-                    type="submit" 
-                    variant="contained" 
-                    size="large" 
-                    fullWidth
-                    sx={{ py: 1.5, background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)` }}
-                  >
-                    Sign Up
-                  </Button>
-                </Grow>
+              <Stack spacing={2.5}>
+                <TextField
+                  fullWidth
+                  label="Email"
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  required
+                  disabled={isLoading}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                      '&:hover': {
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      },
+                    },
+                    '& .MuiInputLabel-root': {
+                      color: 'rgba(255, 255, 255, 0.7)',
+                    },
+                    '& .MuiOutlinedInput-input': {
+                      color: 'white',
+                    },
+                  }}
+                />
+                <TextField
+                  fullWidth
+                  label="Password"
+                  type="password"
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  required
+                  disabled={isLoading}
+                  autoComplete="new-password"
+                  helperText="Must be at least 8 characters long"
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                      '&:hover': {
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      },
+                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#7e3af2',
+                      },
+                    },
+                    '& .MuiInputLabel-root': {
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      '&.Mui-focused': {
+                        color: '#7e3af2',
+                      },
+                    },
+                    '& .MuiOutlinedInput-input': {
+                      color: 'white',
+                    },
+                    '& .MuiFormHelperText-root': {
+                      color: 'rgba(255, 255, 255, 0.5)',
+                    },
+                  }}
+                />
+                <TextField
+                  fullWidth
+                  label="Confirm Password"
+                  type="password"
+                  name="confirmPassword"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                  required
+                  disabled={isLoading}
+                  autoComplete="new-password"
+                  error={formData.password !== formData.confirmPassword && formData.confirmPassword !== ''}
+                  helperText={
+                    formData.password !== formData.confirmPassword && formData.confirmPassword !== '' 
+                      ? 'Passwords do not match'
+                      : ' '
+                  }
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                      '&:hover': {
+                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                      },
+                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                        borderColor: '#7e3af2',
+                      },
+                    },
+                    '& .MuiInputLabel-root': {
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      '&.Mui-focused': {
+                        color: '#7e3af2',
+                      },
+                    },
+                    '& .MuiOutlinedInput-input': {
+                      color: 'white',
+                    },
+                    '& .MuiFormHelperText-root': {
+                      color: theme.palette.error.main,
+                    },
+                  }}
+                />
+                <Button
+                  type="submit"
+                  variant="contained"
+                  size="large"
+                  disabled={isLoading}
+                  sx={{
+                    py: 1.5,
+                    backgroundColor: '#7e3af2',
+                    '&:hover': {
+                      backgroundColor: '#6c2bd9',
+                    },
+                  }}
+                >
+                  {isLoading ? (
+                    <CircularProgress size={24} color="inherit" />
+                  ) : (
+                    'Sign Up'
+                  )}
+                </Button>
               </Stack>
             </form>
 
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography variant="body2" color="text.secondary">
+            <Box sx={{ mt: 3, textAlign: 'center' }}>
+              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
                 Already have an account?{' '}
-                <MuiLink component={Link} to="/signin"
-                  sx={{ color: theme.palette.primary.main, textDecoration: 'none',
-                    '&:hover': { textDecoration: 'underline' } }}>
+                <MuiLink
+                  component={Link}
+                  to="/signin"
+                  sx={{
+                    color: '#7e3af2',
+                    textDecoration: 'none',
+                    '&:hover': {
+                      textDecoration: 'underline',
+                    },
+                  }}
+                >
                   Sign in
                 </MuiLink>
               </Typography>
             </Box>
-          </Stack>
-        </Paper>
-      </Container>
+          </Box>
+        </Container>
+      </Box>
     </Box>
   );
 };
 
-export default SignUpPage; 
+export default SignUpPage;

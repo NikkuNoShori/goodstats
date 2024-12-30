@@ -2,20 +2,9 @@ export interface Book {
   id: string;
   title: string;
   author: string;
-  isbn: string;
-  isbn13: string;
-  rating: number;
-  dateRead: string | null;
-  dateStarted: string | null;
-  shelves: string[];
-  pageCount: number;
-  format: string;
-  publisher: string;
-  publishedDate: string;
-  genres: string[];
-  description: string;
-  coverImage: string;
-  link: string;
+  rating?: number;
+  dateRead?: string;
+  coverImage?: string;
 }
 
 export interface BookDetails extends Book {
@@ -36,4 +25,4 @@ export interface BookDetails extends Book {
     };
     date: string;
   }[];
-} 
+}

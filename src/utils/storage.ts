@@ -4,7 +4,7 @@ export const secureStorage = {
     const encrypted = btoa(JSON.stringify(value)); // Simple encoding for demo
     localStorage.setItem(key, encrypted);
   },
-  
+
   get: (key: string) => {
     const value = localStorage.getItem(key);
     if (!value) return null;
@@ -14,8 +14,8 @@ export const secureStorage = {
       return null;
     }
   },
-  
+
   remove: (key: string) => {
     localStorage.removeItem(key);
-  }
-}; 
+  },
+};

@@ -1,12 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
-import { env } from '../config/env';
 
-export const supabase = createClient(
-  env.supabase.url,
-  env.supabase.anonKey
-);
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Types for our database
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables');
+}
+
+// Add proper types for Supabase tables
 export interface Profile {
   id: string;
   email: string;
@@ -40,4 +41,6 @@ export interface Book {
   link?: string;
   created_at: string;
   updated_at: string;
-} 
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);

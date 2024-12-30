@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Paper,
   Typography,
@@ -12,6 +11,8 @@ import {
   useTheme,
   alpha,
 } from '@mui/material';
+import React from 'react';
+
 import { AppTheme } from '../../theme/types';
 
 interface ConnectedAccount {
@@ -29,7 +30,7 @@ const ConnectedAccounts: React.FC = () => {
       provider: 'Goodreads',
       email: 'user@example.com',
       connected: '2024-01-01',
-    }
+    },
   ]);
 
   const handleDisconnect = (id: string) => {
@@ -43,12 +44,12 @@ const ConnectedAccounts: React.FC = () => {
       </Typography>
 
       <List>
-        {accounts.map((account) => (
+        {accounts.map(account => (
           <ListItem key={account.id} divider>
-            <Avatar 
-              sx={{ 
+            <Avatar
+              sx={{
                 mr: 2,
-                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`
+                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
               }}
             >
               {account.provider[0]}
@@ -68,7 +69,7 @@ const ConnectedAccounts: React.FC = () => {
                   '&:hover': {
                     borderColor: theme.palette.error.dark,
                     backgroundColor: alpha(theme.palette.error.main, 0.1),
-                  }
+                  },
                 }}
               >
                 Disconnect
@@ -81,4 +82,4 @@ const ConnectedAccounts: React.FC = () => {
   );
 };
 
-export default ConnectedAccounts; 
+export default ConnectedAccounts;

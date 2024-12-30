@@ -44,8 +44,8 @@ export const mockReadingData: MockData = {
     genres: ['Fiction', 'Fantasy'],
     description: 'A sample book description',
     coverImage: 'https://example.com/cover.jpg',
-    link: 'https://example.com/book'
-  }
+    link: 'https://example.com/book',
+  },
 };
 
-export const CHART_COLORS = ['#7C3AED', '#EC4899', '#9F67FF', '#F472B6'] as const; 
+export const CHART_COLORS = ['#7C3AED', '#EC4899', '#9F67FF', '#F472B6'] as const;

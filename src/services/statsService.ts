@@ -32,8 +32,8 @@ export interface PopularAuthor {
 export const statsService = {
   calculateStats: (books: Book[]): ReadingStats => {
     // Sort books by date read
-    const sortedBooks = [...books].sort((a, b) => 
-      new Date(b.dateRead || 0).getTime() - new Date(a.dateRead || 0).getTime()
+    const sortedBooks = [...books].sort(
+      (a, b) => new Date(b.dateRead || 0).getTime() - new Date(a.dateRead || 0).getTime()
     );
 
     // Calculate basic stats
@@ -69,9 +69,9 @@ export const statsService = {
       topAuthors,
       readingHours: calculateReadingHours(books),
       completionRate: 95, // TODO: Implement actual calculation
-      averageBookLength: Math.round(totalPages / totalBooks)
+      averageBookLength: Math.round(totalPages / totalBooks),
     };
-  }
+  },
 };
 
 // Helper functions
@@ -100,7 +100,7 @@ const calculateReadingPace = (books: Book[]) => {
   return {
     pagesPerDay: 0,
     booksPerMonth: 0,
-    estimatedYearlyTotal: 0
+    estimatedYearlyTotal: 0,
   };
 };
 
@@ -108,11 +108,11 @@ const calculateTrends = (books: Book[]) => {
   // Implementation
   return {
     books: { period: 'Last Month', current: 0, previous: 0, percentageChange: 0 },
-    pages: { period: 'Last Month', current: 0, previous: 0, percentageChange: 0 }
+    pages: { period: 'Last Month', current: 0, previous: 0, percentageChange: 0 },
   };
 };
 
 const calculateReadingHours = (books: Book[]) => {
   // Implementation
   return { morning: 0, afternoon: 0, evening: 0 };
-}; 
+};

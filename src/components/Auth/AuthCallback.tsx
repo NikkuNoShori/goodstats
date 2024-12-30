@@ -1,76 +1,65 @@
-import React, { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Box, CircularProgress, Typography, Container, Alert } from '@mui/material';
-import { goodreadsService } from '../../services/goodreadsService';
-import { userService } from '../../services/userService';
+import { CircularProgress, Alert, Box } from '@mui/material';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
-const AuthCallback: React.FC = () => {
+import { supabase } from '../../services/supabase';
+
+const AuthCallback = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string>();
 
   useEffect(() => {
     const handleCallback = async () => {
-      const oauthToken = searchParams.get('oauth_token');
-      const oauthVerifier = searchParams.get('oauth_verifier');
-      const error = searchParams.get('error');
-
-      if (error) {
-        setError(error);
-        setTimeout(() => navigate('/signin', { state: { error } }), 2000);
-        return;
-      }
-
-      if (!oauthToken || !oauthVerifier) {
-        setError('Invalid OAuth response');
-        setTimeout(() => navigate('/signin', { state: { error: 'Authentication failed' } }), 2000);
-        return;
-      }
-
       try {
-        const authResult = await goodreadsService.completeAuth(oauthToken, oauthVerifier);
-        userService.setProfile({
-          id: authResult.userId,
-          goodreadsId: authResult.goodreadsId,
-          accessToken: authResult.accessToken,
-          refreshToken: authResult.refreshToken,
-          tokenExpiry: Date.now() + authResult.expiresIn * 1000
-        });
+        const params = new URLSearchParams(window.location.search);
+        const oauthToken = params.get('oauth_token');
+        const oauthVerifier = params.get('oauth_verifier');
+
+        if (!oauthToken || !oauthVerifier) {
+          throw new Error('Missing OAuth parameters');
+        }
+
+        // Store the tokens in user profile
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Not authenticated');
+
+        await supabase
+          .from('profiles')
+          .update({
+            goodreads_token: oauthToken,
+            // Store other relevant data
+          })
+          .eq('id', user.id);
+
         navigate('/dashboard');
       } catch (err) {
-        setError('Failed to complete authentication');
-        setTimeout(() => navigate('/signin', { state: { error: 'Authentication failed' } }), 2000);
+        setError(err instanceof Error ? err.message : 'Failed to complete authentication');
       }
     };
 
     handleCallback();
-  }, [searchParams, navigate]);
+  }, [navigate]);
 
   if (error) {
     return (
-      <Container maxWidth="sm">
-        <Box sx={{ mt: 8, textAlign: 'center' }}>
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-          <Typography color="text.secondary">
-            Redirecting back to sign in...
-          </Typography>
-        </Box>
-      </Container>
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">{error}</Alert>
+      </Box>
     );
   }
 
   return (
-    <Container maxWidth="sm">
-      <Box sx={{ mt: 8, textAlign: 'center' }}>
-        <CircularProgress sx={{ mb: 2 }} />
-        <Typography>
-          Completing authentication...
-        </Typography>
-      </Box>
-    </Container>
+    <Box
+      sx={{
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: '100vh',
+      }}
+    >
+      <CircularProgress />
+    </Box>
   );
 };
 
-export default AuthCallback; 
+export default AuthCallback;

@@ -3,12 +3,14 @@ export const validateEmail = (email: string): boolean => {
   return re.test(email);
 };
 
-export const validatePassword = (password: string): {
+export const validatePassword = (
+  password: string
+): {
   isValid: boolean;
   errors: string[];
 } => {
   const errors: string[] = [];
-  
+
   if (password.length < 8) {
     errors.push('Password must be at least 8 characters');
   }
@@ -27,6 +29,6 @@ export const validatePassword = (password: string): {
 
   return {
     isValid: errors.length === 0,
-    errors
+    errors,
   };
-}; 
+};

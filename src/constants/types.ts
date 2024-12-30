@@ -20,4 +20,4 @@ export interface MockData {
   genreDistribution: GenreDistribution[];
   readingPace: ReadingPace[];
   mockBook: Book;
-} 
+}
