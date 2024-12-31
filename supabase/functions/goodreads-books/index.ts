@@ -22,7 +22,8 @@ serve(async (req) => {
     const doc = new DOMParser().parseFromString(html, "text/html")
     
     // Extract books from the shelves
-    const books = Array.from(doc.querySelectorAll(".bookalike")).map(book => ({
+    const bookElements = Array.from(doc.querySelectorAll(".bookalike")) as Element[];
+    const books = bookElements.map((book) => ({
       id: book.getAttribute("data-resource-id") || "",
       title: book.querySelector(".title")?.textContent?.trim() || "",
       author: book.querySelector(".author")?.textContent?.trim() || "",

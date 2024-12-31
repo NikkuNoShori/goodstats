@@ -25,8 +25,7 @@
   "include": [
     "src/**/*",
     "app/**/*",
-    "netlify/**/*",
-    "vite.config.ts"
+    "api/**/*"
   ],
   "references": [{ "path": "./tsconfig.node.json" }]
 } 

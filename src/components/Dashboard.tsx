@@ -1,15 +1,14 @@
 import { Grid, Button, Alert, Box, Typography, Paper } from '@mui/material';
 import { AutoStories, ImportContacts } from '@mui/icons-material';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Provider } from '@supabase/supabase-js';
 
 import BookList from './Dashboard/BookList';
 import Header from './common/Header';
 import { usePageTitle } from '../utils/usePageTitle';
 import { supabase } from '../services/supabase';
-import { goodreadsService } from '../services/goodreadsService';
+import { env } from '../config/env';
 import type { Book } from '../types/book';
 
 const Dashboard = () => {
@@ -19,6 +18,27 @@ const Dashboard = () => {
 
   usePageTitle('Dashboard');
   const [error, setError] = useState<string | null>(null);
+
+  // Report login status when component mounts
+  useEffect(() => {
+    const reportLoginStatus = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await fetch(`${env.app.url}/api/auth/check`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Failed to report login status:', err);
+      }
+    };
+    reportLoginStatus();
+  }, []);
 
   // Query for stored books
   const { data: storedBooks, isLoading: isLoadingStored } = useQuery({
@@ -60,33 +80,55 @@ const Dashboard = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      // Get the latest sync date
+      // Get the profile to check Goodreads username
       const { data: profile } = await supabase
         .from('profiles')
-        .select('last_sync')
+        .select('goodreads_username')
         .eq('id', user.id)
         .single();
 
-      // Update last sync date
-      await supabase
-        .from('profiles')
-        .update({ last_sync: new Date().toISOString() })
-        .eq('id', user.id);
+      if (!profile?.goodreads_username) {
+        throw new Error('Please connect your Goodreads account first');
+      }
 
-      return 0;
+      // Trigger sync through extension
+      const response = await fetch(`${env.app.url}/api/sync-goodreads`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to sync books. Please make sure you have the extension installed and are on Goodreads.');
+      }
+
+      const result = await response.json();
+      return result.count || 0;
     },
-    onSuccess: () => {
-      setError('Starting Goodreads authentication...');
+    onSuccess: (count) => {
+      setError(`Successfully synced ${count} books`);
     },
     onError: (err) => {
-      setError(err instanceof Error ? err.message : 'Failed to connect to Goodreads');
+      setError(err instanceof Error ? err.message : 'Failed to sync books');
     }
   });
 
   const handleOAuthLogin = async () => {
     try {
+      // Get the current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
       // Get the OAuth URL from our backend
-      const authUrl = await goodreadsService.getOAuthUrl();
+      const { data } = await supabase
+        .from('auth_urls')
+        .insert({ user_id: user.id })
+        .select()
+        .single();
+      
+      const authUrl = data.url;
       
       const width = 600;
       const height = 700;
