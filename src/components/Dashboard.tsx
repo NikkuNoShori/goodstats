@@ -25,9 +25,8 @@ const Dashboard = () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
-          await fetch(`${env.app.url}/api/auth/check`, {
+          await fetch('/api/auth/check', {
             method: 'GET',
-            credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${session.access_token}`

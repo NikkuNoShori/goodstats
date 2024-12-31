@@ -10,15 +10,18 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey)
 
 export default async function handler(req) {
+  const origin = req.headers.get('origin') || 'https://goodstats.vercel.app'
+
   // Handle preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
       headers: {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'GET',
         'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-        'Access-Control-Max-Age': '86400'
+        'Access-Control-Max-Age': '86400',
+        'Access-Control-Allow-Credentials': 'true'
       }
     })
   }
@@ -28,9 +31,10 @@ export default async function handler(req) {
       status: 405,
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'GET',
-        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        'Access-Control-Allow-Credentials': 'true'
       }
     })
   }
@@ -44,9 +48,10 @@ export default async function handler(req) {
       return new Response(JSON.stringify({ authenticated: false }), {
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Origin': origin,
           'Access-Control-Allow-Methods': 'GET',
-          'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
+          'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+          'Access-Control-Allow-Credentials': 'true'
         }
       })
     }
@@ -57,18 +62,20 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ authenticated: !!user && !error }), {
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'GET',
-        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        'Access-Control-Allow-Credentials': 'true'
       }
     })
   } catch (error) {
     return new Response(JSON.stringify({ authenticated: false }), {
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'GET',
-        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        'Access-Control-Allow-Credentials': 'true'
       }
     })
   }
