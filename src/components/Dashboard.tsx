@@ -25,16 +25,40 @@ const Dashboard = () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
-          await fetch('/api/auth/check', {
+          const response = await fetch('/api/auth/check', {
             method: 'GET',
             headers: {
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${session.access_token}`
             }
           });
+
+          if (response.ok) {
+            // Send message to extension
+            window.postMessage({
+              type: 'GOODSTATS_AUTH_STATUS',
+              data: {
+                authenticated: true,
+                session: {
+                  access_token: session.access_token,
+                  expires_at: session.expires_at,
+                  refresh_token: session.refresh_token
+                }
+              }
+            }, '*');
+          }
+        } else {
+          window.postMessage({
+            type: 'GOODSTATS_AUTH_STATUS',
+            data: { authenticated: false }
+          }, '*');
         }
       } catch (err) {
         console.error('Failed to report login status:', err);
+        window.postMessage({
+          type: 'GOODSTATS_AUTH_STATUS',
+          data: { authenticated: false }
+        }, '*');
       }
     };
     reportLoginStatus();
@@ -190,6 +214,7 @@ const Dashboard = () => {
       <Header 
         title="Dashboard" 
         subtitle="Track your reading progress and insights"
+        data-testid="user-dashboard"
       />
       
       {emailPending && (
@@ -213,6 +238,7 @@ const Dashboard = () => {
             maxWidth: 1000,
             mx: 'auto'
           }}
+          data-testid="connect-goodreads"
         >
           <Grid container spacing={3}>
             <Grid item xs={12} md={6}>
@@ -299,12 +325,13 @@ const Dashboard = () => {
           </Grid>
         </Paper>
       ) : (
-        <Box sx={{ mb: 4, textAlign: 'right' }}>
+        <Box sx={{ mb: 4, textAlign: 'right' }} data-testid="user-profile-section">
           <Button
             variant="outlined"
             onClick={() => syncMutation.mutate()}
             disabled={syncMutation.isPending}
             startIcon={<AutoStories />}
+            data-testid="sync-books-button"
             sx={{
               py: 1.5,
               px: 3,
@@ -339,7 +366,7 @@ const Dashboard = () => {
 
       {/* Show BookList only when connected */}
       {profile?.goodreads_username && (
-        <Grid container spacing={2} sx={{ mt: 2 }}>
+        <Grid container spacing={2} sx={{ mt: 2 }} data-testid="user-book-list">
           <Grid item xs={12}>
             <BookList 
               books={storedBooks || []} 
