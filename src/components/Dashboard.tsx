@@ -23,13 +23,14 @@ const Dashboard = () => {
   useEffect(() => {
     const reportLoginStatus = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
           await fetch(`${env.app.url}/api/auth/check`, {
-            method: 'POST',
+            method: 'GET',
             credentials: 'include',
             headers: {
-              'Content-Type': 'application/json'
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`
             }
           });
         }
