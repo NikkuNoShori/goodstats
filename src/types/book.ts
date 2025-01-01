@@ -1,10 +1,25 @@
 export interface Book {
   id: string;
+  user_id: string;
   title: string;
   author: string;
-  rating?: number;
-  dateRead?: string;
-  coverImage?: string;
+  isbn?: string;
+  isbn13?: string;
+  asin?: string;
+  num_pages?: number;
+  avg_rating?: number;
+  user_rating?: number;
+  date_read?: string;
+  date_added?: string;
+  date_started?: string;
+  date_updated?: string;
+  shelves?: string[];
+  format?: string;
+  review?: string;
+  goodreads_id: string;
+  cover_url?: string;
+  cover_storage_path?: string;
+  updated_at: string;
 }
 
 export interface BookDetails extends Book {
@@ -13,7 +28,7 @@ export interface BookDetails extends Book {
     position: number;
   };
   awards?: string[];
-  similarBooks?: string[];
+  similar_books?: string[];
   quotes?: string[];
   reviews?: {
     id: string;
