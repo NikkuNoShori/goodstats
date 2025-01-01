@@ -1,381 +1,404 @@
-import { Grid, Button, Alert, Box, Typography, Paper } from '@mui/material';
-import { AutoStories, ImportContacts } from '@mui/icons-material';
-import { useQuery, useMutation } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-
-import BookList from './Dashboard/BookList';
-import Header from './common/Header';
-import { usePageTitle } from '../utils/usePageTitle';
+import { 
+  Box, 
+  Button, 
+  Typography, 
+  Alert, 
+  CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField
+} from '@mui/material';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../services/supabase';
-import { env } from '../config/env';
-import type { Book } from '../types/book';
+import { crawlbaseService } from '../services/crawlbaseService';
+import Header from './common/Header';
+import BookList from './Dashboard/BookList';
+import { Book } from '../types/book';
+import { Session } from '@supabase/supabase-js';
 
 const Dashboard = () => {
-  const location = useLocation();
-  const emailPending = location.state?.emailPending;
-  const message = location.state?.message;
-
-  usePageTitle('Dashboard');
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [goodreadsUrl, setGoodreadsUrl] = useState('');
+  const queryClient = useQueryClient();
 
-  // Report login status when component mounts
+  // Get the base URL based on environment
+  const baseUrl = import.meta.env.DEV 
+    ? 'http://localhost:3000' 
+    : (import.meta.env.VITE_APP_URL || 'https://goodstats.vercel.app');
+
   useEffect(() => {
-    const reportLoginStatus = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          const response = await fetch('/api/auth/check', {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`
-            }
-          });
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      const session = data.session as Session | null;
+      const currentUserId = session?.user?.id || null;
+      setUserId(currentUserId);
 
-          if (response.ok) {
-            // Send message to extension
-            window.postMessage({
-              type: 'GOODSTATS_AUTH_STATUS',
-              data: {
-                authenticated: true,
-                session: {
-                  access_token: session.access_token,
-                  expires_at: session.expires_at,
-                  refresh_token: session.refresh_token
-                }
-              }
-            }, '*');
-          }
-        } else {
-          window.postMessage({
-            type: 'GOODSTATS_AUTH_STATUS',
-            data: { authenticated: false }
-          }, '*');
+      // If we have a user ID, ensure they have a profile
+      if (currentUserId) {
+        const { data: existingProfile, error: fetchError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', currentUserId)
+          .single();
+
+        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "not found" error
+          console.error('Error fetching profile:', fetchError);
+          return;
         }
-      } catch (err) {
-        console.error('Failed to report login status:', err);
-        window.postMessage({
-          type: 'GOODSTATS_AUTH_STATUS',
-          data: { authenticated: false }
-        }, '*');
+
+        // If profile doesn't exist, create it
+        if (!existingProfile) {
+          const { error: insertError } = await supabase
+            .from('profiles')
+            .insert([{
+              id: currentUserId,
+              updated_at: new Date().toISOString()
+            }]);
+
+          if (insertError) {
+            console.error('Error creating profile:', insertError);
+          }
+        }
       }
     };
-    reportLoginStatus();
+    checkSession();
   }, []);
 
-  // Query for stored books
-  const { data: storedBooks, isLoading: isLoadingStored } = useQuery({
-    queryKey: ['stored-books'],
+  const { data: books, isLoading: booksLoading } = useQuery({
+    queryKey: ['books', userId],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      const { data } = await supabase
+      if (!userId) return [];
+      const { data, error } = await supabase
         .from('books')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', userId)
         .order('date_read', { ascending: false });
-
+      
+      if (error) throw error;
       return data as Book[];
-    }
-  });
-
-  // Check if Goodreads is connected
-  const { data: profile } = useQuery({
-    queryKey: ['profile'],
-    queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      const { data } = await supabase
-        .from('profiles')
-        .select('goodreads_username')
-        .eq('id', user.id)
-        .single();
-
-      return data;
-    }
-  });
-
-  // Mutation for syncing books
-  const syncMutation = useMutation({
-    mutationFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      // Get the profile to check Goodreads username
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('goodreads_username')
-        .eq('id', user.id)
-        .single();
-
-      if (!profile?.goodreads_username) {
-        throw new Error('Please connect your Goodreads account first');
-      }
-
-      // Trigger sync through extension
-      const response = await fetch(`${env.app.url}/api/sync-goodreads`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to sync books. Please make sure you have the extension installed and are on Goodreads.');
-      }
-
-      const result = await response.json();
-      return result.count || 0;
     },
-    onSuccess: (count) => {
-      setError(`Successfully synced ${count} books`);
-    },
-    onError: (err) => {
-      setError(err instanceof Error ? err.message : 'Failed to sync books');
-    }
+    enabled: !!userId
   });
 
-  const handleOAuthLogin = async () => {
+  const extractGoodreadsId = (url: string): string | null => {
     try {
-      // Get the current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      // Get the OAuth URL from our backend
-      const { data } = await supabase
-        .from('auth_urls')
-        .insert({ user_id: user.id })
-        .select()
-        .single();
-      
-      const authUrl = data.url;
-      
-      const width = 600;
-      const height = 700;
-      const left = Math.round(window.screen.width / 2 - width / 2);
-      const top = Math.round(window.screen.height / 2 - height / 2);
-      
-      const popup = window.open(
-        authUrl,
-        'Goodreads Login',
-        `width=${width},height=${height},left=${left},top=${top},toolbar=no,location=no,directories=no,status=no,menubar=no,scrollbars=yes,resizable=yes`
-      );
-
-      if (!popup) throw new Error('Failed to open login window');
-
-      // Listen for messages from the popup
-      const messageHandler = async (event: MessageEvent) => {
-        // Only accept messages from our own domain
-        if (event.origin !== window.location.origin) return;
-
-        try {
-          const { type, data } = event.data;
-          
-          if (type === 'goodreads-auth-success') {
-            // Update the user's profile with the Goodreads data
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-              await supabase
-                .from('profiles')
-                .update({
-                  goodreads_username: data.username,
-                  goodreads_user_id: data.userId,
-                  last_sync: new Date().toISOString()
-                })
-                .eq('id', user.id);
-            }
-            
-            window.removeEventListener('message', messageHandler);
-            popup.close();
-            window.location.reload();
-          } else if (type === 'goodreads-auth-error') {
-            throw new Error(data.message || 'Authentication failed');
-          }
-        } catch (err) {
-          window.removeEventListener('message', messageHandler);
-          popup.close();
-          setError(err instanceof Error ? err.message : 'Failed to connect to Goodreads');
+      const urlObj = new URL(url);
+      // Handle different Goodreads URL formats
+      const pathParts = urlObj.pathname.split('/');
+      // Look for a numeric ID in the path
+      for (const part of pathParts) {
+        if (/^\d+$/.test(part)) {
+          return part;
         }
-      };
-
-      window.addEventListener('message', messageHandler);
-
+      }
+      return null;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to connect to Goodreads');
+      return null;
     }
   };
 
+  const handleUrlSubmit = async () => {
+    const goodreadsId = extractGoodreadsId(goodreadsUrl);
+    if (!goodreadsId) {
+      setError('Invalid Goodreads URL. Please provide a valid profile URL.');
+      return;
+    }
+
+    try {
+      // First check if profile exists
+      const { data: existingProfile, error: fetchError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (fetchError) {
+        console.error('Error fetching profile:', fetchError);
+        throw new Error(`Failed to fetch profile: ${fetchError.message}`);
+      }
+
+      // If profile doesn't exist, create it
+      if (!existingProfile) {
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert([
+            {
+              id: userId,
+              goodreads_user_id: goodreadsId,
+              updated_at: new Date().toISOString()
+            }
+          ]);
+
+        if (insertError) {
+          console.error('Error inserting profile:', insertError);
+          throw new Error(`Failed to create profile: ${insertError.message}`);
+        }
+      } else {
+        // Update existing profile
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            goodreads_user_id: goodreadsId,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', userId);
+
+        if (updateError) {
+          console.error('Error updating profile:', updateError);
+          throw new Error(`Failed to update profile: ${updateError.message}`);
+        }
+      }
+
+      setDialogOpen(false);
+      setGoodreadsUrl('');
+      handleCrawlbaseSync(goodreadsId);
+    } catch (err) {
+      console.error('Profile operation error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to update profile');
+    }
+  };
+
+  const handleCrawlbaseSync = async (existingGoodreadsId?: string) => {
+    if (!userId) {
+      setError('Please sign in to sync your books');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // If we have an existing ID from the parameter, use it directly
+      if (existingGoodreadsId) {
+        console.log('Using provided Goodreads ID:', existingGoodreadsId);
+        
+        // Check API usage limit
+        const canMakeCall = await crawlbaseService.checkUsageLimit(userId, 'javascript');
+        if (!canMakeCall) {
+          setError('You have reached your API usage limit for today');
+          return;
+        }
+
+        // Make the API call with the provided ID
+        await makeApiCall(userId, existingGoodreadsId);
+        return;
+      }
+
+      // Otherwise, check the profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('goodreads_user_id')
+        .eq('id', userId)
+        .single();
+
+      console.log('Profile from database:', profile);
+
+      if (profileError) {
+        console.error('Error fetching profile:', profileError);
+        throw new Error('Failed to fetch profile');
+      }
+
+      // If no Goodreads ID in profile, show the dialog
+      if (!profile?.goodreads_user_id) {
+        console.log('No Goodreads ID found in profile, showing dialog');
+        setDialogOpen(true);
+        setIsLoading(false);
+        return;
+      }
+
+      // Use the ID from profile
+      console.log('Using Goodreads ID from profile:', profile.goodreads_user_id);
+
+      // Check API usage limit
+      const canMakeCall = await crawlbaseService.checkUsageLimit(userId, 'javascript');
+      if (!canMakeCall) {
+        setError('You have reached your API usage limit for today');
+        return;
+      }
+
+      // Make the API call
+      await makeApiCall(userId, profile.goodreads_user_id);
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sync with Goodreads');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Helper function to make the API call
+  const makeApiCall = async (userId: string, goodreadsId: string) => {
+    console.log('Making API call with:', { userId, goodreadsId });
+
+    const response = await fetch(`${baseUrl}/api/crawl-goodreads`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ userId, goodreadsId })
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      console.error('API Error:', data);
+      throw new Error(data.message || 'Failed to sync with Goodreads');
+    }
+
+    const result = await response.json();
+    console.log('Sync result:', result);
+
+    // Increment API usage
+    await crawlbaseService.incrementUsage(userId, 'javascript');
+
+    // Invalidate books query to refresh the list
+    queryClient.invalidateQueries({ queryKey: ['books', userId] });
+  };
+
   return (
-    <Box sx={{ background: '#1a1f2e', minHeight: '100vh', px: 2 }}>
-      <Header 
-        title="Dashboard" 
-        subtitle="Track your reading progress and insights"
-        data-testid="user-dashboard"
-      />
-      
-      {emailPending && (
-        <Alert 
-          severity="warning" 
-          sx={{ mb: 2 }}
-        >
-          {message || 'Please verify your email to access all features'}
-        </Alert>
-      )}
-
-      {!profile?.goodreads_username ? (
-        <Paper 
-          sx={{ 
-            p: { xs: 3, md: 4 },
-            background: 'rgba(255, 255, 255, 0.02)',
-            borderRadius: 2,
-            backdropFilter: 'blur(10px)',
-            border: '1px solid rgba(255, 255, 255, 0.05)',
-            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.1)',
-            maxWidth: 1000,
-            mx: 'auto'
-          }}
-          data-testid="connect-goodreads"
-        >
-          <Grid container spacing={3}>
-            <Grid item xs={12} md={6}>
-              <Typography 
-                variant="h5" 
-                sx={{ 
-                  fontWeight: 'bold',
-                  mb: 1.5,
-                  background: 'linear-gradient(120deg, #7e3af2, #9f7aea)',
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                }}
-              >
-                Connect Your Goodreads Account
-              </Typography>
-              <Typography 
-                sx={{ 
-                  color: 'rgba(255, 255, 255, 0.7)',
-                  mb: 2,
-                  lineHeight: 1.5,
-                  fontSize: '1rem'
-                }}
-              >
-                Link your Goodreads account to automatically import your reading history 
-                and track your progress. You'll be able to:
-              </Typography>
-              <Box component="ul" sx={{ 
-                color: 'rgba(255, 255, 255, 0.7)',
-                pl: 2,
-                mb: 3,
-                '& > li': { 
-                  mb: 1,
-                  fontSize: '0.95rem',
-                  lineHeight: 1.4
-                }
-              }}>
-                <li>Sync your reading history and current books</li>
-                <li>Get insights about your reading habits</li>
-                <li>Track your reading goals</li>
-                <li>Generate reading statistics</li>
+    <>
+      <Header title="" />
+      <Box sx={{ 
+        background: '#1a1f2e', 
+        minHeight: '100vh',
+        pt: '88px',
+        px: 2
+      }}>
+        <Box sx={{ 
+          maxWidth: '1200px',
+          width: '100%',
+          mx: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 3
+        }}>
+          {/* Header Section */}
+          <Box sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            mt: 3,
+          }}>
+            <Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: 'rgba(255, 255, 255, 0.5)',
+                  }}
+                >
+                  Home
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: 'rgba(255, 255, 255, 0.5)',
+                  }}
+                >
+                  /
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: 'rgba(255, 255, 255, 0.5)',
+                  }}
+                >
+                  Dashboard
+                </Typography>
               </Box>
-              <Button 
-                variant="contained" 
-                fullWidth
-                disabled={syncMutation.isPending}
-                startIcon={<ImportContacts />}
-                onClick={handleOAuthLogin}
+              <Typography
+                variant="h4"
                 sx={{
-                  py: 1.5,
-                  background: 'linear-gradient(120deg, #7e3af2, #9f7aea)',
-                  transition: 'transform 0.2s, box-shadow 0.2s',
-                  fontSize: '1rem',
-                  '&:hover': {
-                    background: 'linear-gradient(120deg, #6c2bd9, #9061ea)',
-                    transform: 'translateY(-1px)',
-                    boxShadow: '0 4px 12px rgba(126, 58, 242, 0.3)',
-                  },
-                  '&:active': {
-                    transform: 'translateY(0)',
-                  },
+                  color: 'white',
+                  fontWeight: 600,
+                  mb: 0.5,
+                  lineHeight: 1.2,
                 }}
               >
-                {syncMutation.isPending ? 'Connecting...' : 'Connect to Goodreads'}
-              </Button>
-            </Grid>
-            <Grid item xs={12} md={6} sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center',
-              pl: { md: 4 }
-            }}>
-              <Box 
-                component="img"
-                src="/reading-illustration.svg"
-                alt="Reading Illustration"
-                sx={{ 
-                  maxWidth: '100%',
-                  height: 'auto',
-                  opacity: 0.9,
-                  filter: 'drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15))',
+                Dashboard
+              </Typography>
+              <Typography
+                variant="body1"
+                sx={{
+                  color: 'rgba(255, 255, 255, 0.7)',
+                  lineHeight: 1.2,
                 }}
-              />
-            </Grid>
-          </Grid>
-        </Paper>
-      ) : (
-        <Box sx={{ mb: 4, textAlign: 'right' }} data-testid="user-profile-section">
-          <Button
-            variant="outlined"
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-            startIcon={<AutoStories />}
-            data-testid="sync-books-button"
-            sx={{
-              py: 1.5,
-              px: 3,
-              borderColor: 'rgba(255, 255, 255, 0.1)',
-              color: 'rgba(255, 255, 255, 0.7)',
-              backdropFilter: 'blur(10px)',
-              transition: 'all 0.2s',
-              '&:hover': {
-                borderColor: '#7e3af2',
-                backgroundColor: 'rgba(126, 58, 242, 0.08)',
-                transform: 'translateY(-1px)',
-              },
-              '&:active': {
-                transform: 'translateY(0)',
-              },
-            }}
-          >
-            {syncMutation.isPending ? 'Syncing...' : 'Sync Books'}
-          </Button>
+              >
+                View and manage your reading statistics
+              </Typography>
+            </Box>
+
+            <Button
+              variant="contained"
+              onClick={() => handleCrawlbaseSync()}
+              disabled={isLoading}
+              sx={{ minWidth: 200 }}
+            >
+              {isLoading ? (
+                <CircularProgress size={24} color="inherit" />
+              ) : (
+                'Sync with Goodreads'
+              )}
+            </Button>
+          </Box>
+
+          {error && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {error}
+            </Alert>
+          )}
+
+          <BookList books={books || []} isLoading={booksLoading} />
         </Box>
-      )}
+      </Box>
 
-      {error && (
-        <Alert 
-          severity={error.includes('Successfully') ? 'success' : 'error'}
-          sx={{ mt: 2 }}
-          onClose={() => setError(null)}
-        >
-          {error}
-        </Alert>
-      )}
-
-      {/* Show BookList only when connected */}
-      {profile?.goodreads_username && (
-        <Grid container spacing={2} sx={{ mt: 2 }} data-testid="user-book-list">
-          <Grid item xs={12}>
-            <BookList 
-              books={storedBooks || []} 
-              isLoading={isLoadingStored || syncMutation.isPending} 
-            />
-          </Grid>
-        </Grid>
-      )}
-    </Box>
+      {/* Goodreads URL Dialog */}
+      <Dialog 
+        open={dialogOpen} 
+        onClose={() => {
+          setDialogOpen(false);
+          setError(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Connect Your Goodreads Account</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            Please enter your Goodreads profile URL to sync your reading history.
+          </Typography>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Goodreads Profile URL"
+            type="url"
+            fullWidth
+            variant="outlined"
+            value={goodreadsUrl}
+            onChange={(e) => setGoodreadsUrl(e.target.value)}
+            placeholder="https://www.goodreads.com/user/show/YOUR_ID"
+            error={!!error}
+            helperText={error}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setDialogOpen(false);
+            setError(null);
+          }}>
+            Cancel
+          </Button>
+          <Button onClick={handleUrlSubmit} variant="contained">
+            Connect
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 };
 
