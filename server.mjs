@@ -3,6 +3,7 @@ import cors from 'cors';
 import { config } from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import fetch from 'node-fetch';
+import * as cheerio from 'cheerio';
 
 // Load environment variables
 config();
@@ -160,10 +161,46 @@ app.post('/api/crawl-goodreads', async (req, res) => {
         });
       }
 
+      // Parse the HTML response
+      const $ = cheerio.load(text);
+      const books = [];
+
+      // Find the table rows containing book data
+      $('tr.bookalike').each((i, element) => {
+        const $row = $(element);
+        const title = $row.find('td.field.title a').text().trim();
+        const author = $row.find('td.field.author a').text().trim();
+        const rating = parseInt($row.find('td.field.rating .staticStars').attr('title')?.split(' ')[1] || '0');
+        const dateRead = $row.find('td.field.date_read span').attr('title');
+        const isbn = $row.find('td.field.isbn span').text().trim();
+        const review = $row.find('td.field.review span').text().trim();
+
+        if (title) {
+          books.push({
+            title,
+            author,
+            rating,
+            dateRead,
+            isbn,
+            review
+          });
+        }
+      });
+
+      // Update the profile with last sync time
+      await supabase
+        .from('profiles')
+        .update({ 
+          last_sync: new Date().toISOString()
+        })
+        .eq('id', userId);
+
       return res.json({
         message: 'Success',
-        responsePreview: text.substring(0, 200)
+        books,
+        totalBooks: books.length
       });
+
     } catch (fetchError) {
       console.error('Fetch error:', fetchError);
       return res.status(500).json({

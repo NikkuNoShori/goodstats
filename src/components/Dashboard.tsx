@@ -1,405 +1,280 @@
-import { useState, useEffect } from 'react';
-import { 
-  Box, 
-  Button, 
-  Typography, 
-  Alert, 
-  CircularProgress,
+import { useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useUser, useSupabaseClient } from '../hooks/useSupabase';
+import {
+  Box,
+  Button,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField
+  TextField,
+  Typography,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Rating,
+  Alert,
+  CircularProgress,
+  Tabs,
+  Tab
 } from '@mui/material';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '../services/supabase';
-import { crawlbaseService } from '../services/crawlbaseService';
-import Header from './common/Header';
-import BookList from './Dashboard/BookList';
-import { Book } from '../types/book';
-import { Session } from '@supabase/supabase-js';
+import { makeApiCall } from '../utils/api';
 
-const Dashboard = () => {
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+interface Book {
+  title: string;
+  author: string;
+  rating: number;
+  date_read?: string;
+  isbn: string;
+  review: string;
+  shelves?: string[];
+}
+
+export default function Dashboard() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [goodreadsUrl, setGoodreadsUrl] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [selectedShelf, setSelectedShelf] = useState<string>('all');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const user = useUser();
+  const supabase = useSupabaseClient();
   const queryClient = useQueryClient();
 
-  // Get the base URL based on environment
-  const baseUrl = import.meta.env.DEV 
-    ? 'http://localhost:3000' 
-    : (import.meta.env.VITE_APP_URL || 'https://goodstats.vercel.app');
-
-  useEffect(() => {
-    const checkSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      const session = data.session as Session | null;
-      const currentUserId = session?.user?.id || null;
-      setUserId(currentUserId);
-
-      // If we have a user ID, ensure they have a profile
-      if (currentUserId) {
-        const { data: existingProfile, error: fetchError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', currentUserId)
-          .single();
-
-        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "not found" error
-          console.error('Error fetching profile:', fetchError);
-          return;
-        }
-
-        // If profile doesn't exist, create it
-        if (!existingProfile) {
-          const { error: insertError } = await supabase
-            .from('profiles')
-            .insert([{
-              id: currentUserId,
-              updated_at: new Date().toISOString()
-            }]);
-
-          if (insertError) {
-            console.error('Error creating profile:', insertError);
-          }
-        }
-      }
-    };
-    checkSession();
-  }, []);
-
-  const { data: books, isLoading: booksLoading } = useQuery({
-    queryKey: ['books', userId],
+  // Fetch user's profile
+  const { data: profile } = useQuery({
+    queryKey: ['profile', user?.id],
     queryFn: async () => {
-      if (!userId) return [];
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user?.id)
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id
+  });
+
+  // Fetch books from Supabase
+  const { data: books = [], isLoading: isBooksLoading } = useQuery({
+    queryKey: ['books', user?.id],
+    queryFn: async () => {
       const { data, error } = await supabase
         .from('books')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', user?.id)
         .order('date_read', { ascending: false });
-      
+
       if (error) throw error;
       return data as Book[];
     },
-    enabled: !!userId
+    enabled: !!user?.id
   });
 
-  const extractGoodreadsId = (url: string): string | null => {
-    try {
-      const urlObj = new URL(url);
-      // Handle different Goodreads URL formats
-      const pathParts = urlObj.pathname.split('/');
-      // Look for a numeric ID in the path
-      for (const part of pathParts) {
-        if (/^\d+$/.test(part)) {
-          return part;
-        }
-      }
-      return null;
-    } catch (err) {
-      return null;
-    }
-  };
+  // Group books by shelf
+  const booksByShelf = useMemo(() => {
+    const shelves = new Map<string, Book[]>();
+    shelves.set('all', books); // Add "All" shelf
 
-  const handleUrlSubmit = async () => {
+    // Group books by each shelf they belong to
+    books.forEach(book => {
+      if (book.shelves) {
+        book.shelves.forEach(shelf => {
+          if (!shelves.has(shelf)) {
+            shelves.set(shelf, []);
+          }
+          shelves.get(shelf)!.push(book);
+        });
+      }
+    });
+
+    return shelves;
+  }, [books]);
+
+  // Get unique shelf names for tabs
+  const shelfNames = useMemo(() => {
+    return ['all', ...Array.from(booksByShelf.keys()).filter(shelf => shelf !== 'all')];
+  }, [booksByShelf]);
+
+  // Get books for current shelf
+  const currentShelfBooks = useMemo(() => {
+    return booksByShelf.get(selectedShelf) || [];
+  }, [booksByShelf, selectedShelf]);
+
+  const handleGoodreadsUrlSubmit = () => {
     const goodreadsId = extractGoodreadsId(goodreadsUrl);
-    if (!goodreadsId) {
-      setError('Invalid Goodreads URL. Please provide a valid profile URL.');
-      return;
-    }
-
-    try {
-      // First check if profile exists
-      const { data: existingProfile, error: fetchError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (fetchError) {
-        console.error('Error fetching profile:', fetchError);
-        throw new Error(`Failed to fetch profile: ${fetchError.message}`);
-      }
-
-      // If profile doesn't exist, create it
-      if (!existingProfile) {
-        const { error: insertError } = await supabase
-          .from('profiles')
-          .insert([
-            {
-              id: userId,
-              goodreads_user_id: goodreadsId,
-              updated_at: new Date().toISOString()
-            }
-          ]);
-
-        if (insertError) {
-          console.error('Error inserting profile:', insertError);
-          throw new Error(`Failed to create profile: ${insertError.message}`);
-        }
-      } else {
-        // Update existing profile
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .update({
-            goodreads_user_id: goodreadsId,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', userId);
-
-        if (updateError) {
-          console.error('Error updating profile:', updateError);
-          throw new Error(`Failed to update profile: ${updateError.message}`);
-        }
-      }
-
+    if (goodreadsId) {
+      handleCrawlbaseSync(goodreadsId);
       setDialogOpen(false);
       setGoodreadsUrl('');
-      handleCrawlbaseSync(goodreadsId);
-    } catch (err) {
-      console.error('Profile operation error:', err);
-      setError(err instanceof Error ? err.message : 'Failed to update profile');
+    } else {
+      setError('Invalid Goodreads URL. Please enter a valid profile URL.');
     }
   };
 
-  const handleCrawlbaseSync = async (existingGoodreadsId?: string) => {
-    if (!userId) {
-      setError('Please sign in to sync your books');
+  const extractGoodreadsId = (url: string) => {
+    try {
+      const match = url.match(/goodreads\.com\/user\/show\/(\d+)/);
+      return match ? match[1] : null;
+    } catch (error) {
+      console.error('Error extracting Goodreads ID:', error);
+      return null;
+    }
+  };
+
+  const handleCrawlbaseSync = async (goodreadsId?: string | null) => {
+    if (!user?.id) return;
+
+    const idToUse = goodreadsId || profile?.goodreads_user_id;
+    if (!idToUse) {
+      setDialogOpen(true);
       return;
     }
 
+    setIsLoading(true);
+    setError(null);
+
     try {
-      setIsLoading(true);
-      setError(null);
+      await makeApiCall('/api/crawl-goodreads', {
+        method: 'POST',
+        body: { userId: user.id, goodreadsId: idToUse }
+      });
 
-      // If we have an existing ID from the parameter, use it directly
-      if (existingGoodreadsId) {
-        console.log('Using provided Goodreads ID:', existingGoodreadsId);
-        
-        // Check API usage limit
-        const canMakeCall = await crawlbaseService.checkUsageLimit(userId, 'javascript');
-        if (!canMakeCall) {
-          setError('You have reached your API usage limit for today');
-          return;
-        }
-
-        // Make the API call with the provided ID
-        await makeApiCall(userId, existingGoodreadsId);
-        return;
-      }
-
-      // Otherwise, check the profile
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('goodreads_user_id')
-        .eq('id', userId)
-        .single();
-
-      console.log('Profile from database:', profile);
-
-      if (profileError) {
-        console.error('Error fetching profile:', profileError);
-        throw new Error('Failed to fetch profile');
-      }
-
-      // If no Goodreads ID in profile, show the dialog
-      if (!profile?.goodreads_user_id) {
-        console.log('No Goodreads ID found in profile, showing dialog');
-        setDialogOpen(true);
-        setIsLoading(false);
-        return;
-      }
-
-      // Use the ID from profile
-      console.log('Using Goodreads ID from profile:', profile.goodreads_user_id);
-
-      // Check API usage limit
-      const canMakeCall = await crawlbaseService.checkUsageLimit(userId, 'javascript');
-      if (!canMakeCall) {
-        setError('You have reached your API usage limit for today');
-        return;
-      }
-
-      // Make the API call
-      await makeApiCall(userId, profile.goodreads_user_id);
-
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sync with Goodreads');
+      // Invalidate and refetch books query
+      queryClient.invalidateQueries({ queryKey: ['books', user.id] });
+    } catch (error) {
+      console.error('API Error:', error);
+      setError(error instanceof Error ? error.message : 'Failed to sync with Goodreads');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Helper function to make the API call
-  const makeApiCall = async (userId: string, goodreadsId: string) => {
-    console.log('Making API call with:', { userId, goodreadsId });
-
-    const response = await fetch(`${baseUrl}/api/crawl-goodreads`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ userId, goodreadsId })
-    });
-
-    if (!response.ok) {
-      const data = await response.json();
-      console.error('API Error:', data);
-      throw new Error(data.message || 'Failed to sync with Goodreads');
-    }
-
-    const result = await response.json();
-    console.log('Sync result:', result);
-
-    // Increment API usage
-    await crawlbaseService.incrementUsage(userId, 'javascript');
-
-    // Invalidate books query to refresh the list
-    queryClient.invalidateQueries({ queryKey: ['books', userId] });
-  };
-
   return (
-    <>
-      <Header title="" />
-      <Box sx={{ 
-        background: '#1a1f2e', 
-        minHeight: '100vh',
-        pt: '88px',
-        px: 2
-      }}>
-        <Box sx={{ 
-          maxWidth: '1200px',
-          width: '100%',
-          mx: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 3
-        }}>
-          {/* Header Section */}
-          <Box sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            mt: 3,
-          }}>
-            <Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: 'rgba(255, 255, 255, 0.5)',
-                  }}
-                >
-                  Home
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: 'rgba(255, 255, 255, 0.5)',
-                  }}
-                >
-                  /
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: 'rgba(255, 255, 255, 0.5)',
-                  }}
-                >
-                  Dashboard
-                </Typography>
-              </Box>
-              <Typography
-                variant="h4"
-                sx={{
-                  color: 'white',
-                  fontWeight: 600,
-                  mb: 0.5,
-                  lineHeight: 1.2,
-                }}
-              >
-                Dashboard
-              </Typography>
-              <Typography
-                variant="body1"
-                sx={{
-                  color: 'rgba(255, 255, 255, 0.7)',
-                  lineHeight: 1.2,
-                }}
-              >
-                View and manage your reading statistics
-              </Typography>
-            </Box>
-
-            <Button
-              variant="contained"
-              onClick={() => handleCrawlbaseSync()}
-              disabled={isLoading}
-              sx={{ minWidth: 200 }}
-            >
-              {isLoading ? (
-                <CircularProgress size={24} color="inherit" />
-              ) : (
-                'Sync with Goodreads'
-              )}
-            </Button>
+    <Box sx={{ 
+      pt: '64px',
+      px: 3,
+      minHeight: '100vh',
+      bgcolor: 'background.default'
+    }}>
+      <Box sx={{ maxWidth: 1200, mx: 'auto', py: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+          <Box>
+            <Typography variant="h4" component="h1" gutterBottom color="text.primary">
+              Dashboard
+            </Typography>
+            <Typography variant="subtitle1" color="text.secondary">
+              View and manage your reading statistics
+            </Typography>
           </Box>
-
-          {error && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {error}
-            </Alert>
-          )}
-
-          <BookList books={books || []} isLoading={booksLoading} />
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => handleCrawlbaseSync()}
+            disabled={isLoading}
+          >
+            {isLoading ? <CircularProgress size={24} /> : 'Sync with Goodreads'}
+          </Button>
         </Box>
-      </Box>
 
-      {/* Goodreads URL Dialog */}
-      <Dialog 
-        open={dialogOpen} 
-        onClose={() => {
-          setDialogOpen(false);
-          setError(null);
-        }}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Connect Your Goodreads Account</DialogTitle>
-        <DialogContent>
-          <Typography variant="body1" sx={{ mb: 2 }}>
-            Please enter your Goodreads profile URL to sync your reading history.
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        {isBooksLoading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : books.length > 0 ? (
+          <>
+            <Tabs
+              value={selectedShelf}
+              onChange={(_, newValue) => setSelectedShelf(newValue)}
+              sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}
+            >
+              {shelfNames.map(shelf => (
+                <Tab
+                  key={shelf}
+                  label={shelf === 'all' ? 'All Books' : shelf}
+                  value={shelf}
+                  sx={{
+                    textTransform: 'capitalize',
+                    color: 'text.secondary',
+                    '&.Mui-selected': { color: 'primary.main' }
+                  }}
+                />
+              ))}
+            </Tabs>
+
+            <TableContainer component={Paper} sx={{ bgcolor: 'background.paper' }}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Title</TableCell>
+                    <TableCell>Author</TableCell>
+                    <TableCell>Rating</TableCell>
+                    <TableCell>Date Read</TableCell>
+                    <TableCell>ISBN</TableCell>
+                    <TableCell>Review</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {currentShelfBooks.map((book, index) => (
+                    <TableRow key={index}>
+                      <TableCell>{book.title}</TableCell>
+                      <TableCell>{book.author}</TableCell>
+                      <TableCell>
+                        <Rating value={book.rating} readOnly max={5} />
+                      </TableCell>
+                      <TableCell>{book.date_read}</TableCell>
+                      <TableCell>{book.isbn}</TableCell>
+                      <TableCell>{book.review}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </>
+        ) : (
+          <Typography variant="body1" color="text.secondary" align="center">
+            No books found. Enter your Goodreads username to load your books.
           </Typography>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Goodreads Profile URL"
-            type="url"
-            fullWidth
-            variant="outlined"
-            value={goodreadsUrl}
-            onChange={(e) => setGoodreadsUrl(e.target.value)}
-            placeholder="https://www.goodreads.com/user/show/YOUR_ID"
-            error={!!error}
-            helperText={error}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => {
-            setDialogOpen(false);
-            setError(null);
-          }}>
-            Cancel
-          </Button>
-          <Button onClick={handleUrlSubmit} variant="contained">
-            Connect
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </>
-  );
-};
+        )}
 
-export default Dashboard;
+        <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
+          <DialogTitle>Connect Goodreads</DialogTitle>
+          <DialogContent>
+            <TextField
+              autoFocus
+              margin="dense"
+              label="Goodreads Profile URL"
+              type="url"
+              fullWidth
+              variant="outlined"
+              value={goodreadsUrl}
+              onChange={(e) => setGoodreadsUrl(e.target.value)}
+              placeholder="https://www.goodreads.com/user/show/YOUR_ID"
+              error={!!error}
+              helperText={error}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleGoodreadsUrlSubmit} variant="contained">
+              Connect
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Box>
+    </Box>
+  );
+}

@@ -8,16 +8,6 @@ const supabase = createClient(
 );
 
 const CRAWLBASE_TOKEN = process.env.CRAWLBASE_TOKEN;
-const CRAWLBASE_SCREENSHOTS_TOKEN = process.env.CRAWLBASE_SCREENSHOTS_TOKEN;
-const CRAWLBASE_STORAGE_TOKEN = process.env.CRAWLBASE_STORAGE_TOKEN;
-
-// Log environment variables (without exposing sensitive data)
-console.log('Environment check:', {
-  hasSupabaseUrl: !!process.env.SUPABASE_URL,
-  hasSupabaseKey: !!process.env.SUPABASE_ANON_KEY,
-  hasCrawlbaseToken: !!process.env.CRAWLBASE_TOKEN,
-  env: process.env.NODE_ENV
-});
 
 interface BookData {
   title: string;
@@ -28,129 +18,71 @@ interface BookData {
   dateRead: string;
   review: string;
   coverUrl: string;
+  shelves: string[];
   coverStoragePath?: string;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  console.log('API handler started');
-  
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Method not allowed' });
   }
 
-  // Log all environment variables (without sensitive values)
-  console.log('Environment check:', {
-    hasSupabaseUrl: !!process.env.SUPABASE_URL,
-    hasSupabaseKey: !!process.env.SUPABASE_ANON_KEY,
-    hasCrawlbaseToken: !!process.env.CRAWLBASE_TOKEN,
-    env: process.env.NODE_ENV,
-    crawlbaseTokenPrefix: process.env.CRAWLBASE_TOKEN?.substring(0, 5) + '...'
-  });
+  const { userId, goodreadsId } = req.body;
+
+  if (!userId || !goodreadsId) {
+    return res.status(400).json({ message: 'Missing required parameters' });
+  }
 
   try {
-    const { userId, goodreadsId } = req.body;
-    console.log('API received request:', { userId, goodreadsId });
-
-    if (!userId) {
-      return res.status(400).json({ message: 'User ID is required' });
-    }
-
-    if (!goodreadsId) {
-      return res.status(400).json({ message: 'Goodreads ID is required in request' });
-    }
-
-    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
-      console.error('Missing Supabase environment variables');
-      return res.status(500).json({ message: 'Supabase configuration error' });
-    }
-
-    // Initialize Supabase client
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_ANON_KEY
+    // First, fetch the user's shelves
+    const shelvesUrl = `https://www.goodreads.com/review/list/${goodreadsId}?shelf=all`;
+    const shelvesResponse = await fetch(
+      `https://api.crawlbase.com/?token=${CRAWLBASE_TOKEN}&url=${encodeURIComponent(shelvesUrl)}`
     );
 
-    // Verify the Goodreads ID matches the profile
-    console.log('Fetching profile from Supabase...');
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('goodreads_user_id')
-      .eq('id', userId)
-      .single();
-
-    console.log('Profile from database:', profile);
-    
-    if (profileError) {
-      console.error('Error fetching profile:', profileError);
-      return res.status(500).json({ message: 'Failed to fetch profile' });
+    if (!shelvesResponse.ok) {
+      throw new Error('Failed to fetch shelves');
     }
 
-    if (!profile?.goodreads_user_id) {
-      return res.status(400).json({ message: 'Goodreads ID not found in profile' });
-    }
+    const shelvesHtml = await shelvesResponse.text();
+    const books = parseGoodreadsHtml(shelvesHtml);
 
-    if (profile.goodreads_user_id !== goodreadsId) {
-      console.error('Goodreads ID mismatch:', { 
-        profileId: profile.goodreads_user_id, 
-        requestId: goodreadsId 
-      });
-      return res.status(400).json({ message: 'Goodreads ID mismatch' });
-    }
-
-    // Scrape Goodreads data
-    const goodreadsUrl = `https://www.goodreads.com/review/list/${goodreadsId}?shelf=read&sort=date_read&order=d&per_page=200&view=table`;
-    console.log('Fetching from URL:', goodreadsUrl);
-
-    if (!process.env.CRAWLBASE_TOKEN) {
-      console.error('CRAWLBASE_TOKEN is not set');
-      return res.status(500).json({ message: 'Crawlbase configuration error' });
-    }
-
-    try {
-      const crawlbaseUrl = `https://api.crawlbase.com/?token=${process.env.CRAWLBASE_TOKEN}&url=${encodeURIComponent(goodreadsUrl)}`;
-      console.log('Making request to Crawlbase URL:', crawlbaseUrl);
-
-      const response = await fetch(crawlbaseUrl);
-      console.log('Crawlbase response status:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Crawlbase error response:', errorText);
-        return res.status(response.status).json({ 
-          message: 'Failed to fetch Goodreads data',
-          error: errorText
+    // Update books in Supabase
+    for (const book of books) {
+      const { error: upsertError } = await supabase
+        .from('books')
+        .upsert({
+          user_id: userId,
+          goodreads_id: goodreadsId,
+          title: book.title,
+          author: book.author,
+          isbn: book.isbn,
+          rating: book.rating,
+          date_read: book.dateRead,
+          review: book.review,
+          shelves: book.shelves,
+          page_count: book.pages,
+          cover_image: book.coverUrl,
+          updated_at: new Date().toISOString()
         });
+
+      if (upsertError) {
+        console.error('Error upserting book:', upsertError);
       }
-
-      const responseText = await response.text();
-      console.log('Got response from Crawlbase, first 200 chars:', responseText.substring(0, 200));
-
-      if (!responseText.includes('table')) {
-        console.error('Response does not contain expected table data');
-        return res.status(500).json({ message: 'Invalid response from Goodreads' });
-      }
-
-      console.log('Parsing HTML...');
-      const books = parseGoodreadsHtml(responseText);
-      console.log(`Successfully parsed ${books.length} books from response`);
-
-      return res.status(200).json({
-        message: 'Scraping successful',
-        booksFound: books.length,
-        firstBook: books[0]
-      });
-
-    } catch (err) {
-      console.error('Error during Crawlbase request:', err);
-      return res.status(500).json({ 
-        message: 'Failed to fetch Goodreads data',
-        error: err instanceof Error ? err.message : String(err)
-      });
     }
 
-  } catch (err) {
-    console.error('Error in crawl-goodreads:', err);
-    return res.status(500).json({ message: 'Failed to sync with Goodreads' });
+    // Update last sync timestamp
+    await supabase
+      .from('profiles')
+      .update({
+        last_sync: new Date().toISOString()
+      })
+      .eq('id', userId);
+
+    return res.status(200).json({ books });
+  } catch (error) {
+    console.error('Error in handler:', error);
+    return res.status(500).json({ message: 'Internal server error' });
   }
 }
 
@@ -158,33 +90,34 @@ function parseGoodreadsHtml(html: string): BookData[] {
   const $ = cheerio.load(html);
   const books: BookData[] = [];
 
-  // Find the table rows containing book data
-  $('tr.bookalike').each((_, row) => {
-    const $row = $(row);
+  // Find all book rows
+  $('.bookalike').each((_, element) => {
+    const title = $(element).find('.title a').text().trim();
+    const author = $(element).find('.author a').text().trim();
+    const isbn = $(element).find('.isbn13').text().trim() || '';
+    const rating = parseInt($(element).find('.rating .value').text().trim()) || 0;
+    const dateRead = $(element).find('.date_read .value').text().trim();
+    const review = $(element).find('.review .value').text().trim();
+    const coverUrl = $(element).find('.cover img').attr('src') || '';
+    const pages = parseInt($(element).find('.num_pages .value').text().trim()) || 0;
+    
+    // Get shelves for the book
+    const shelves: string[] = [];
+    $(element).find('.shelves .value a').each((_, shelfElement) => {
+      shelves.push($(shelfElement).text().trim());
+    });
 
-    // Extract basic book info
-    const title = $row.find('td.title a').first().text().trim();
-    const author = $row.find('td.author a').first().text().trim();
-    const isbn = $row.find('td.isbn span').text().trim();
-    const pages = parseInt($row.find('td.num_pages span').text()) || 0;
-    const rating = $row.find('td.rating span[class^="staticStar"]').length || 0;
-    const dateRead = $row.find('td.date_read span').text().trim();
-    const review = $row.find('td.review span').text().trim();
-    const coverUrl = $row.find('td.cover img').attr('src') || '';
-
-    // Only add books with required fields
-    if (title && author && isbn) {
-      books.push({
-        title,
-        author,
-        isbn,
-        pages,
-        rating,
-        dateRead,
-        review,
-        coverUrl
-      });
-    }
+    books.push({
+      title,
+      author,
+      isbn,
+      rating,
+      dateRead,
+      review,
+      coverUrl,
+      pages,
+      shelves
+    });
   });
 
   return books;

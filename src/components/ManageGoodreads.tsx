@@ -16,7 +16,6 @@ import {
 } from '@mui/material';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../services/supabase';
-import Header from './common/Header';
 import { Session } from '@supabase/supabase-js';
 
 interface GoodreadsProfile {
@@ -27,7 +26,7 @@ interface GoodreadsProfile {
   last_sync?: string;
 }
 
-const ManageGoodreads = () => {
+export default function ManageGoodreads() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -134,150 +133,94 @@ const ManageGoodreads = () => {
   };
 
   return (
-    <>
-      <Header title="" />
-      <Box sx={{ 
-        background: '#1a1f2e', 
-        minHeight: '100vh',
-        pt: '88px',
-        px: 2
-      }}>
-        <Box sx={{ 
-          maxWidth: '1200px',
-          width: '100%',
-          mx: 'auto',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 3
-        }}>
-          {/* Header Section */}
-          <Box sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            mt: 3,
-          }}>
-            <Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: 'rgba(255, 255, 255, 0.5)',
-                  }}
-                >
-                  Home
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: 'rgba(255, 255, 255, 0.5)',
-                  }}
-                >
-                  /
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: 'rgba(255, 255, 255, 0.5)',
-                  }}
-                >
-                  Manage Goodreads
-                </Typography>
-              </Box>
-              <Typography
-                variant="h4"
-                sx={{
-                  color: 'white',
-                  fontWeight: 600,
-                  mb: 0.5,
-                  lineHeight: 1.2,
-                }}
-              >
-                Manage Goodreads
-              </Typography>
-              <Typography
-                variant="body1"
-                sx={{
-                  color: 'rgba(255, 255, 255, 0.7)',
-                  lineHeight: 1.2,
-                }}
-              >
-                Connect and manage your Goodreads account
-              </Typography>
-            </Box>
+    <Box sx={{ 
+      pt: '64px', // Height of the AppBar
+      px: 3,
+      minHeight: '100vh',
+      bgcolor: 'background.default'
+    }}>
+      <Box sx={{ maxWidth: 1200, mx: 'auto', py: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+          <Box>
+            <Typography variant="h4" component="h1" gutterBottom color="text.primary">
+              Manage Goodreads
+            </Typography>
+            <Typography variant="subtitle1" color="text.secondary">
+              Connect and manage your Goodreads account
+            </Typography>
           </Box>
+        </Box>
 
-          {error && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              {error}
-            </Alert>
-          )}
+        {error && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        )}
 
-          {/* Profile Section */}
-          <Card sx={{ bgcolor: 'rgba(255, 255, 255, 0.05)', color: 'white' }}>
-            <CardContent>
-              {profileLoading ? (
-                <>
-                  <Skeleton variant="text" sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)' }} />
-                  <Skeleton variant="text" sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)' }} />
-                  <Skeleton variant="text" sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)' }} />
-                </>
-              ) : profile?.goodreads_user_id ? (
-                <>
-                  <Typography variant="h6" gutterBottom>
-                    Connected Goodreads Account
+        {/* Profile Section */}
+        <Card sx={{ bgcolor: 'background.paper' }}>
+          <CardContent>
+            {profileLoading ? (
+              <>
+                <Skeleton variant="text" sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)' }} />
+                <Skeleton variant="text" sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)' }} />
+                <Skeleton variant="text" sx={{ bgcolor: 'rgba(255, 255, 255, 0.1)' }} />
+              </>
+            ) : profile?.goodreads_user_id ? (
+              <>
+                <Typography variant="h6" gutterBottom color="text.primary">
+                  Connected Goodreads Account
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Goodreads ID: {profile.goodreads_user_id}
                   </Typography>
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="body2" color="rgba(255, 255, 255, 0.7)">
-                      Goodreads ID: {profile.goodreads_user_id}
+                  <Typography variant="body2" color="text.secondary">
+                    Connected since: {new Date(profile.created_at).toLocaleDateString()}
+                  </Typography>
+                  {profile.last_sync && (
+                    <Typography variant="body2" color="text.secondary">
+                      Last synced: {new Date(profile.last_sync).toLocaleString()}
                     </Typography>
-                    <Typography variant="body2" color="rgba(255, 255, 255, 0.7)">
-                      Connected since: {new Date(profile.created_at).toLocaleDateString()}
-                    </Typography>
-                    {profile.last_sync && (
-                      <Typography variant="body2" color="rgba(255, 255, 255, 0.7)">
-                        Last synced: {new Date(profile.last_sync).toLocaleString()}
-                      </Typography>
-                    )}
-                  </Box>
-                  <Box sx={{ display: 'flex', gap: 2 }}>
-                    <Button
-                      variant="contained"
-                      onClick={() => setDialogOpen(true)}
-                      disabled={isLoading}
-                    >
-                      Update Connection
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      color="error"
-                      onClick={handleDisconnect}
-                      disabled={isLoading}
-                    >
-                      Disconnect
-                    </Button>
-                  </Box>
-                </>
-              ) : (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography variant="h6" gutterBottom>
-                    No Goodreads Account Connected
-                  </Typography>
-                  <Typography variant="body1" sx={{ mb: 3, color: 'rgba(255, 255, 255, 0.7)' }}>
-                    Connect your Goodreads account to start syncing your reading history
-                  </Typography>
+                  )}
+                </Box>
+                <Box sx={{ display: 'flex', gap: 2 }}>
                   <Button
                     variant="contained"
                     onClick={() => setDialogOpen(true)}
                     disabled={isLoading}
                   >
-                    Connect Goodreads
+                    Update Connection
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    onClick={handleDisconnect}
+                    disabled={isLoading}
+                  >
+                    Disconnect
                   </Button>
                 </Box>
-              )}
-            </CardContent>
-          </Card>
-        </Box>
+              </>
+            ) : (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <Typography variant="h6" gutterBottom color="text.primary">
+                  No Goodreads Account Connected
+                </Typography>
+                <Typography variant="body1" sx={{ mb: 3 }} color="text.secondary">
+                  Connect your Goodreads account to start syncing your reading history
+                </Typography>
+                <Button
+                  variant="contained"
+                  onClick={() => setDialogOpen(true)}
+                  disabled={isLoading}
+                >
+                  Connect Goodreads
+                </Button>
+              </Box>
+            )}
+          </CardContent>
+        </Card>
       </Box>
 
       {/* Goodreads URL Dialog */}
@@ -318,13 +261,15 @@ const ManageGoodreads = () => {
           }}>
             Cancel
           </Button>
-          <Button onClick={handleUrlSubmit} variant="contained">
-            {profile?.goodreads_user_id ? 'Update' : 'Connect'}
+          <Button 
+            onClick={handleUrlSubmit}
+            variant="contained"
+            disabled={isLoading}
+          >
+            {isLoading ? <CircularProgress size={24} /> : 'Connect'}
           </Button>
         </DialogActions>
       </Dialog>
-    </>
+    </Box>
   );
-};
-
-export default ManageGoodreads; 
+} 
