@@ -21,11 +21,15 @@ import {
   Alert,
   CircularProgress,
   Tabs,
-  Tab
+  Tab,
+  LinearProgress
 } from '@mui/material';
 import { makeApiCall } from '../utils/api';
 
 interface Book {
+  id?: number;
+  user_id: string;
+  goodreads_id: string;
   title: string;
   author: string;
   rating: number;
@@ -33,6 +37,31 @@ interface Book {
   isbn: string;
   review: string;
   shelves?: string[];
+  page_count?: number;
+  cover_image?: string;
+  updated_at?: string;
+}
+
+interface SyncProgress {
+  stage: 'fetching' | 'parsing' | 'saving' | 'complete';
+  current: number;
+  total: number;
+  message: string;
+}
+
+interface Stats {
+  totalBooks: number;
+  totalShelves: number;
+  averageRating: number;
+  booksPerShelf: Record<string, number>;
+  readingProgress: {
+    read: number;
+    reading: number;
+    toRead: number;
+    total: number;
+  };
+  topAuthors: Array<{ author: string; count: number }>;
+  ratingDistribution: Record<string, number>;
 }
 
 export default function Dashboard() {
@@ -41,6 +70,8 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [selectedShelf, setSelectedShelf] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
+  const [stats, setStats] = useState<Stats | null>(null);
 
   const user = useUser();
   const supabase = useSupabaseClient();
@@ -121,7 +152,8 @@ export default function Dashboard() {
 
   const extractGoodreadsId = (url: string) => {
     try {
-      const match = url.match(/goodreads\.com\/user\/show\/(\d+)/);
+      // Accept any goodreads.com URL containing a numeric ID
+      const match = url.match(/goodreads\.com.*?(\d+)/);
       return match ? match[1] : null;
     } catch (error) {
       console.error('Error extracting Goodreads ID:', error);
@@ -140,20 +172,100 @@ export default function Dashboard() {
 
     setIsLoading(true);
     setError(null);
+    setStats(null); // Reset stats before new sync
 
     try {
-      await makeApiCall('/api/crawl-goodreads', {
+      console.log('Starting sync with Goodreads ID:', idToUse);
+      
+      // Use the API server port (3000) instead of Vite's dev server port (5173)
+      const API_URL = import.meta.env.DEV 
+        ? 'http://localhost:3000'
+        : window.location.origin;
+        
+      const response = await fetch(`${API_URL}/api/crawl-goodreads`, {
         method: 'POST',
-        body: { userId: user.id, goodreadsId: idToUse }
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
+        body: JSON.stringify({ userId: user.id, goodreadsId: idToUse })
       });
 
-      // Invalidate and refetch books query
-      queryClient.invalidateQueries({ queryKey: ['books', user.id] });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('Failed to initialize stream reader');
+      }
+
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          console.log('Stream complete');
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              console.log('Received SSE data:', data);
+              
+              if (data.error) {
+                console.error('Received error:', data.error);
+                setError(data.error);
+                break;
+              }
+
+              if (data.progress) {
+                console.log('Progress update:', data.progress);
+                setSyncProgress(data.progress);
+              }
+
+              if (data.stats) {
+                console.log('Received stats:', data.stats);
+                setStats(data.stats);
+              }
+
+              if (data.books) {
+                console.log('Received books:', data.books.length);
+                // Update the books cache directly with the new data
+                queryClient.setQueryData(['books', user.id], data.books);
+                
+                // Also invalidate to ensure we're in sync with the server
+                await queryClient.invalidateQueries({ queryKey: ['books', user.id] });
+                
+                // Update profile cache to reflect the new goodreads_user_id
+                queryClient.setQueryData(['profile', user.id], (old: any) => ({
+                  ...(old || {}),
+                  goodreads_user_id: idToUse,
+                  last_sync: new Date().toISOString()
+                }));
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e, '\nLine:', line);
+            }
+          }
+        }
+      }
     } catch (error) {
       console.error('API Error:', error);
       setError(error instanceof Error ? error.message : 'Failed to sync with Goodreads');
     } finally {
       setIsLoading(false);
+      // Keep the final progress message visible for a moment
+      setTimeout(() => {
+        setSyncProgress(null);
+      }, 3000);
     }
   };
 
@@ -174,20 +286,103 @@ export default function Dashboard() {
               View and manage your reading statistics
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={() => handleCrawlbaseSync()}
-            disabled={isLoading}
-          >
-            {isLoading ? <CircularProgress size={24} /> : 'Sync with Goodreads'}
-          </Button>
+          <Box>
+            {syncProgress && (
+              <Box sx={{ mb: 2, minWidth: 200 }}>
+                <Typography variant="body2" color="text.secondary">
+                  {syncProgress.message}
+                </Typography>
+                <LinearProgress 
+                  variant="determinate" 
+                  value={(syncProgress.current / syncProgress.total) * 100}
+                  sx={{ mt: 1 }}
+                />
+                <Typography variant="caption" color="text.secondary" align="right" display="block">
+                  {Math.round((syncProgress.current / syncProgress.total) * 100)}%
+                </Typography>
+              </Box>
+            )}
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={() => handleCrawlbaseSync()}
+              disabled={isLoading}
+            >
+              {isLoading ? <CircularProgress size={24} /> : 'Sync with Goodreads'}
+            </Button>
+          </Box>
         </Box>
 
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
           </Alert>
+        )}
+
+        {/* Debug info */}
+        {stats && (
+          <Box sx={{ mb: 2 }}>
+            <Alert severity="info">
+              <pre>{JSON.stringify(stats, null, 2)}</pre>
+            </Alert>
+          </Box>
+        )}
+
+        {/* Statistics Overview */}
+        {stats && (
+          <Box sx={{ mb: 4 }}>
+            <Typography variant="h5" gutterBottom color="text.primary">
+              Reading Statistics
+            </Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 2 }}>
+              {/* Total Books */}
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="h6">{stats.totalBooks}</Typography>
+                <Typography variant="body2" color="text.secondary">Total Books</Typography>
+              </Paper>
+
+              {/* Average Rating */}
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="h6">{stats.averageRating} / 5</Typography>
+                <Typography variant="body2" color="text.secondary">Average Rating</Typography>
+              </Paper>
+
+              {/* Reading Progress */}
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="h6">
+                  {stats.readingProgress.read} Read • {stats.readingProgress.reading} Reading
+                </Typography>
+                <Typography variant="body2" color="text.secondary">Reading Progress</Typography>
+                <LinearProgress 
+                  variant="determinate" 
+                  value={(stats.readingProgress.read / stats.readingProgress.total) * 100}
+                  sx={{ mt: 1 }}
+                />
+              </Paper>
+
+              {/* Top Authors */}
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="subtitle1" gutterBottom>Top Authors</Typography>
+                {stats.topAuthors.slice(0, 5).map(({ author, count }) => (
+                  <Box key={author} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                    <Typography variant="body2">{author}</Typography>
+                    <Typography variant="body2" color="text.secondary">{count} books</Typography>
+                  </Box>
+                ))}
+              </Paper>
+
+              {/* Rating Distribution */}
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="subtitle1" gutterBottom>Rating Distribution</Typography>
+                {Object.entries(stats.ratingDistribution).map(([rating, count]) => (
+                  <Box key={rating} sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                    <Rating value={parseInt(rating)} readOnly size="small" sx={{ mr: 1 }} />
+                    <Typography variant="body2">{count} books</Typography>
+                  </Box>
+                ))}
+              </Paper>
+            </Box>
+          </Box>
         )}
 
         {isBooksLoading ? (

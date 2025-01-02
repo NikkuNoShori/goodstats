@@ -12,6 +12,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Configure server timeouts
+const SERVER_TIMEOUT = 180000; // 180 seconds (3 minutes)
+app.use((req, res, next) => {
+  res.setTimeout(SERVER_TIMEOUT, () => {
+    console.log('Server response timeout');
+    res.status(408).send('Request timeout');
+  });
+  next();
+});
+
 // Initialize Supabase client
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
@@ -34,190 +44,271 @@ console.log('Server environment check:', {
 });
 
 app.post('/api/crawl-goodreads', async (req, res) => {
-  console.log('Received request:', {
-    method: req.method,
-    body: req.body,
-    headers: req.headers
-  });
+  // Set up SSE headers for streaming updates
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('X-Accel-Buffering', 'no');
+  
+  // Helper function to send SSE data
+  const sendSSE = (data) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+    res.flush(); // Force flush the response
+  };
 
   const { userId, goodreadsId } = req.body;
 
   if (!userId || !goodreadsId) {
-    console.log('Missing required fields:', { userId, goodreadsId });
-    return res.status(400).json({ message: 'User ID and Goodreads ID are required' });
+    sendSSE({ error: 'User ID and Goodreads ID are required' });
+    return res.end();
   }
 
   try {
-    // First try to fetch the profile
-    console.log('Fetching profile from Supabase for user:', userId);
-    let { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    console.log('Initial profile query result:', { profile, error: profileError });
-
-    // If profile doesn't exist, create it
-    if (profileError?.code === 'PGRST116') {
-      console.log('Profile not found, attempting to create new profile with data:', {
-        id: userId,
-        goodreads_user_id: goodreadsId,
-        updated_at: new Date().toISOString()
-      });
-
-      const { data: newProfile, error: createError } = await supabase
-        .from('profiles')
-        .insert([
-          {
-            id: userId,
-            goodreads_user_id: goodreadsId,
-            updated_at: new Date().toISOString()
-          }
-        ])
-        .select()
-        .single();
-
-      if (createError) {
-        console.error('Failed to create profile:', {
-          error: createError,
-          code: createError.code,
-          message: createError.message,
-          details: createError.details
-        });
-        return res.status(500).json({ 
-          message: 'Failed to create profile',
-          error: createError.message,
-          details: createError.details
-        });
-      }
-
-      console.log('Successfully created new profile:', newProfile);
-      profile = newProfile;
-    } else if (profileError) {
-      console.error('Supabase error:', profileError);
-      return res.status(500).json({ message: 'Failed to fetch profile' });
-    }
-
-    // Update the Goodreads ID if it's different
-    if (profile && profile.goodreads_user_id !== goodreadsId) {
-      console.log('Updating Goodreads ID in profile from', profile.goodreads_user_id, 'to', goodreadsId);
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ 
-          goodreads_user_id: goodreadsId,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userId);
-
-      if (updateError) {
-        console.error('Failed to update profile:', {
-          error: updateError,
-          code: updateError.code,
-          message: updateError.message,
-          details: updateError.details
-        });
-        return res.status(500).json({ message: 'Failed to update profile' });
-      }
-      console.log('Successfully updated profile with new Goodreads ID');
-    }
-
-    // Make the request to Crawlbase
-    const goodreadsUrl = `https://www.goodreads.com/review/list/${goodreadsId}?shelf=read&sort=date_read&order=d&per_page=200&view=table`;
-    const crawlbaseUrl = `https://api.crawlbase.com/?token=${process.env.CRAWLBASE_TOKEN}&url=${encodeURIComponent(goodreadsUrl)}&format=html`;
-
-    console.log('Making request to Crawlbase:', {
-      goodreadsUrl,
-      crawlbaseUrlStart: crawlbaseUrl.substring(0, 50) + '...'
-    });
-
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => {
-        controller.abort();
-      }, 30000); // 30 second timeout
-
-      const response = await fetch(crawlbaseUrl, {
-        method: 'GET',
+    // First, fetch all shelves
+    const shelvesListUrl = `https://www.goodreads.com/review/list/${goodreadsId}?shelf=all&per_page=1`;
+    console.log('Fetching shelves list from:', shelvesListUrl);
+    
+    const shelvesListResult = await fetchWithRetry(
+      `https://api.crawlbase.com/?token=${process.env.CRAWLBASE_TOKEN}&url=${encodeURIComponent(shelvesListUrl)}&format=raw`,
+      {
         headers: {
-          'Accept': 'text/html,application/xhtml+xml',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124 Safari/537.36'
-        },
-        signal: controller.signal,
-        timeout: 30000
-      });
-
-      clearTimeout(timeout);
-      console.log('Crawlbase response status:', response.status);
-
-      const text = await response.text();
-      console.log('Crawlbase response preview:', text.substring(0, 200));
-
-      if (!response.ok) {
-        console.error('Crawlbase error:', text);
-        return res.status(response.status).json({
-          message: 'Failed to fetch Goodreads data',
-          error: text
-        });
+        }
       }
+    );
 
-      // Parse the HTML response
-      const $ = cheerio.load(text);
-      const books = [];
+    if (!shelvesListResult.ok || !shelvesListResult.text) {
+      throw new Error('Failed to fetch shelves list');
+    }
 
-      // Find the table rows containing book data
-      $('tr.bookalike').each((i, element) => {
-        const $row = $(element);
-        const title = $row.find('td.field.title a').text().trim();
-        const author = $row.find('td.field.author a').text().trim();
-        const rating = parseInt($row.find('td.field.rating .staticStars').attr('title')?.split(' ')[1] || '0');
-        const dateRead = $row.find('td.field.date_read span').attr('title');
-        const isbn = $row.find('td.field.isbn span').text().trim();
-        const review = $row.find('td.field.review span').text().trim();
+    const $ = cheerio.load(shelvesListResult.text);
+    const shelves = $('#paginatedShelfList option').map((_, el) => $(el).val()).get();
+    
+    if (!shelves.length) {
+      throw new Error('No shelves found - please check if the Goodreads profile is public');
+    }
 
-        if (title) {
-          books.push({
-            title,
-            author,
-            rating,
-            dateRead,
-            isbn,
-            review
+    console.log('Found shelves:', shelves);
+    let allBooks = [];
+
+    // Fetch books from each shelf
+    for (let shelfIndex = 0; shelfIndex < shelves.length; shelfIndex++) {
+      const shelf = shelves[shelfIndex];
+      const shelfUrl = `https://www.goodreads.com/review/list/${goodreadsId}?shelf=${shelf}&per_page=100&view=table&sort=date_read&order=d`;
+      
+      console.log(`Fetching shelf ${shelf} (${shelfIndex + 1}/${shelves.length}) from:`, shelfUrl);
+      
+      // Send progress update for shelf fetching
+      sendSSE({
+        progress: {
+          stage: 'fetching',
+          current: shelfIndex + 1,
+          total: shelves.length,
+          message: `Fetching books from shelf: ${shelf} (${shelfIndex + 1}/${shelves.length})`
+        }
+      });
+      
+      try {
+        const shelvesResult = await fetchWithRetry(
+          `https://api.crawlbase.com/?token=${process.env.CRAWLBASE_TOKEN}&url=${encodeURIComponent(shelfUrl)}&format=raw`,
+          {
+            headers: {
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.5',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124 Safari/537.36'
+            }
+          }
+        );
+
+        if (shelvesResult.ok && shelvesResult.text) {
+          const shelfBooks = parseGoodreadsHtml(shelvesResult.text);
+          // Add the current shelf to each book's shelves array
+          shelfBooks.forEach(book => {
+            if (!book.shelves) book.shelves = [];
+            if (!book.shelves.includes(shelf)) {
+              book.shelves.push(shelf);
+            }
           });
+          allBooks = allBooks.concat(shelfBooks);
+          console.log(`Found ${shelfBooks.length} books in shelf ${shelf}`);
+        } else {
+          console.error(`Failed to fetch shelf ${shelf}`);
+        }
+      } catch (error) {
+        console.error(`Error fetching shelf ${shelf}:`, error);
+        continue;
+      }
+    }
+
+    // Deduplicate books while preserving all shelves
+    const bookMap = new Map();
+    allBooks.forEach(book => {
+      const key = `${book.title}-${book.author}`;
+      if (bookMap.has(key)) {
+        // Merge shelves if the book already exists
+        const existing = bookMap.get(key);
+        existing.shelves = [...new Set([...existing.shelves, ...(book.shelves || [])])];
+      } else {
+        bookMap.set(key, book);
+      }
+    });
+    const uniqueBooks = Array.from(bookMap.values());
+
+    console.log(`Total unique books found: ${uniqueBooks.length}`);
+
+    // Update books in Supabase
+    let processed = 0;
+    const booksToReturn = [];
+    
+    for (const book of uniqueBooks) {
+      // Send progress update for saving books
+      sendSSE({
+        progress: {
+          stage: 'saving',
+          current: processed + 1,
+          total: uniqueBooks.length,
+          message: `Saving book: ${book.title} (${processed + 1}/${uniqueBooks.length})`
         }
       });
 
-      // Update the profile with last sync time
-      await supabase
-        .from('profiles')
-        .update({ 
-          last_sync: new Date().toISOString()
-        })
-        .eq('id', userId);
+      const bookData = {
+        user_id: userId,
+        goodreads_id: goodreadsId,
+        title: book.title,
+        author: book.author,
+        isbn: book.isbn,
+        rating: book.rating,
+        date_read: book.dateRead,
+        review: book.review,
+        shelves: book.shelves,
+        page_count: book.pages,
+        cover_image: book.coverUrl,
+        updated_at: new Date().toISOString()
+      };
 
-      return res.json({
-        message: 'Success',
-        books,
-        totalBooks: books.length
-      });
+      const { data, error: upsertError } = await supabase
+        .from('books')
+        .upsert(bookData)
+        .select()
+        .single();
 
-    } catch (fetchError) {
-      console.error('Fetch error:', fetchError);
-      return res.status(500).json({
-        message: 'Failed to fetch from Crawlbase',
-        error: fetchError.message,
-        code: fetchError.code
-      });
+      if (upsertError) {
+        console.error('Error upserting book:', upsertError);
+      } else if (data) {
+        booksToReturn.push(data);
+      }
+
+      processed++;
     }
 
+    // Update last sync timestamp
+    await supabase
+      .from('profiles')
+      .update({
+        last_sync: new Date().toISOString(),
+        goodreads_user_id: goodreadsId
+      })
+      .eq('id', userId);
+
+    // Send final completion message with statistics
+    const stats = {
+      totalBooks: booksToReturn.length,
+      totalShelves: shelves.length,
+      averageRating: calculateAverageRating(booksToReturn),
+      booksPerShelf: calculateBooksPerShelf(booksToReturn),
+      readingProgress: calculateReadingProgress(booksToReturn),
+      topAuthors: calculateTopAuthors(booksToReturn),
+      ratingDistribution: calculateRatingDistribution(booksToReturn)
+    };
+
+    console.log('Sending final response with stats:', stats);
+    
+    const finalResponse = {
+      books: booksToReturn,
+      stats,
+      progress: {
+        stage: 'complete',
+        current: booksToReturn.length,
+        total: booksToReturn.length,
+        message: `Successfully synced ${booksToReturn.length} books from ${shelves.length} shelves`
+      }
+    };
+
+    sendSSE(finalResponse);
+    console.log('Response sent successfully');
+    res.end();
   } catch (error) {
-    console.error('Server error:', error);
-    return res.status(500).json({
-      message: 'Internal server error',
-      error: error instanceof Error ? error.message : String(error)
+    console.error('Error in handler:', error);
+    sendSSE({
+      error: error instanceof Error ? error.message : 'Internal server error'
     });
+    res.end();
   }
 });
+
+// Statistics calculation functions
+function calculateAverageRating(books) {
+  const ratedBooks = books.filter(book => book.rating > 0);
+  if (ratedBooks.length === 0) return 0;
+  const sum = ratedBooks.reduce((acc, book) => acc + book.rating, 0);
+  return (sum / ratedBooks.length).toFixed(2);
+}
+
+function calculateBooksPerShelf(books) {
+  const shelfCounts = {};
+  books.forEach(book => {
+    if (book.shelves) {
+      book.shelves.forEach(shelf => {
+        shelfCounts[shelf] = (shelfCounts[shelf] || 0) + 1;
+      });
+    }
+  });
+  return shelfCounts;
+}
+
+function calculateReadingProgress(books) {
+  const readBooks = books.filter(book => book.shelves?.includes('read')).length;
+  const currentlyReading = books.filter(book => book.shelves?.includes('currently-reading')).length;
+  const toRead = books.filter(book => book.shelves?.includes('to-read')).length;
+  
+  return {
+    read: readBooks,
+    reading: currentlyReading,
+    toRead: toRead,
+    total: books.length
+  };
+}
+
+function calculateTopAuthors(books) {
+  const authorCounts = {};
+  books.forEach(book => {
+    if (book.author) {
+      authorCounts[book.author] = (authorCounts[book.author] || 0) + 1;
+    }
+  });
+  
+  return Object.entries(authorCounts)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 10)
+    .map(([author, count]) => ({ author, count }));
+}
+
+function calculateRatingDistribution(books) {
+  const distribution = {
+    1: 0, 2: 0, 3: 0, 4: 0, 5: 0
+  };
+  
+  books.forEach(book => {
+    if (book.rating > 0) {
+      distribution[book.rating] = (distribution[book.rating] || 0) + 1;
+    }
+  });
+  
+  return distribution;
+}
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {

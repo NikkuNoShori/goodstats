@@ -5,7 +5,11 @@ interface ApiOptions {
 }
 
 export async function makeApiCall(endpoint: string, options: ApiOptions = {}) {
-  const response = await fetch(endpoint, {
+  const baseUrl = process.env.NODE_ENV === 'development' 
+    ? 'http://localhost:3000' 
+    : '';
+  
+  const response = await fetch(`${baseUrl}${endpoint}`, {
     method: options.method || 'GET',
     headers: {
       'Content-Type': 'application/json',
