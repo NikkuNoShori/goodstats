@@ -7,6 +7,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables');
 }
 
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
 // Add proper types for Supabase tables
 export interface Profile {
   id: string;
@@ -42,5 +44,3 @@ export interface Book {
   created_at: string;
   updated_at: string;
 }
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);

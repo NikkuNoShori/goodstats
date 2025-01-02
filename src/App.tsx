@@ -1,92 +1,42 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { supabase } from './services/supabase';
-import Dashboard from './components/Dashboard';
-import SignInPage from './components/Auth/SignInPage';
-import SignUpPage from './components/Auth/SignUpPage';
-import LandingPage from './components/LandingPage';
-import ManageGoodreads from './components/ManageGoodreads';
-import { Session } from '@supabase/supabase-js';
+import { BrowserRouter } from 'react-router-dom';
+import { ThemeProvider, CssBaseline } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { ErrorBoundary } from 'react-error-boundary';
+import { SupabaseProvider } from './context/SupabaseProvider';
+import AppRoutes from './routes';
+import theme from './theme';
 
-// Create a client
-const queryClient = new QueryClient();
-
-function Root() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (loading) {
-    return null; // or a loading spinner
-  }
-
-  // Handle route protection
-  const pathname = window.location.pathname;
-  const element = pathname === "/" && session ? (
-    <Navigate to="/dashboard" />
-  ) : pathname === "/dashboard" && !session ? (
-    <Navigate to="/signin" />
-  ) : pathname.match(/^\/(signin|signup)/) && session ? (
-    <Navigate to="/dashboard" />
-  ) : pathname.match(/^\/manage-goodreads/) && !session ? (
-    <Navigate to="/signin" />
-  ) : null;
-
-  return element || <Outlet />;
-}
-
-// Configure router
-const router = createBrowserRouter([
-  {
-    path: "/",
-    element: (
-      <QueryClientProvider client={queryClient}>
-        <Root />
-      </QueryClientProvider>
-    ),
-    children: [
-      {
-        index: true,
-        element: <LandingPage />,
-      },
-      {
-        path: "signin",
-        element: <SignInPage />,
-      },
-      {
-        path: "signup",
-        element: <SignUpPage />,
-      },
-      {
-        path: "dashboard",
-        element: <Dashboard />,
-      },
-      {
-        path: "manage-goodreads",
-        element: <ManageGoodreads />,
-      },
-    ],
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
   },
-]);
+});
 
 function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <ErrorBoundary
+      fallback={
+        <div style={{ padding: 20, textAlign: 'center', color: 'white' }}>
+          <h1>Something went wrong</h1>
+          <button onClick={() => window.location.reload()}>Refresh Page</button>
+        </div>
+      }
+    >
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <BrowserRouter>
+            <SupabaseProvider>
+              <AppRoutes />
+            </SupabaseProvider>
+          </BrowserRouter>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
+  );
 }
 
 export default App;

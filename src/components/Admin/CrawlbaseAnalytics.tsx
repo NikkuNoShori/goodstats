@@ -4,7 +4,7 @@ import {
   Card,
   CardContent,
   CircularProgress,
-  Grid,
+  Stack,
   Typography,
   LinearProgress
 } from '@mui/material';
@@ -43,9 +43,9 @@ const CrawlbaseAnalytics = () => {
   const apiTypes = ['javascript', 'screenshots', 'storage', 'leads'] as const;
 
   return (
-    <Grid container spacing={3}>
+    <Stack spacing={3} direction={{ xs: 'column', md: 'row' }} flexWrap="wrap">
       {apiTypes.map((type) => (
-        <Grid item xs={12} md={6} key={type}>
+        <Box key={type} flex={1} minWidth={300}>
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom sx={{ textTransform: 'capitalize' }}>
@@ -87,9 +87,9 @@ const CrawlbaseAnalytics = () => {
               </Box>
             </CardContent>
           </Card>
-        </Grid>
+        </Box>
       ))}
-    </Grid>
+    </Stack>
   );
 };
 
