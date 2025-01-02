@@ -132,6 +132,47 @@ export default function ManageGoodreads() {
     }
   };
 
+  const handleClearData = async () => {
+    if (!userId) return;
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // Call cleanup endpoint with user ID using POST
+      const response = await fetch(`http://localhost:3000/api/cleanup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ user_id: userId })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to cleanup database');
+      }
+
+      // Clear React Query cache for this user's data
+      queryClient.removeQueries(['books', userId]);
+      queryClient.removeQueries(['goodreads-profile', userId]);
+
+      // Force refetch to ensure UI updates
+      await Promise.all([
+        queryClient.refetchQueries(['books', userId]),
+        queryClient.refetchQueries(['goodreads-profile', userId])
+      ]);
+
+      // Show success message
+      setError(null);
+    } catch (error) {
+      console.error('Error clearing data:', error);
+      setError(error instanceof Error ? error.message : 'Failed to clear data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <Box sx={{ 
       pt: '64px', // Height of the AppBar
@@ -210,13 +251,23 @@ export default function ManageGoodreads() {
                 <Typography variant="body1" sx={{ mb: 3 }} color="text.secondary">
                   Connect your Goodreads account to start syncing your reading history
                 </Typography>
-                <Button
-                  variant="contained"
-                  onClick={() => setDialogOpen(true)}
-                  disabled={isLoading}
-                >
-                  Connect Goodreads
-                </Button>
+                <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                  <Button
+                    variant="contained"
+                    onClick={() => setDialogOpen(true)}
+                    disabled={isLoading}
+                  >
+                    Connect Goodreads
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    onClick={handleClearData}
+                    disabled={isLoading}
+                  >
+                    Clear Data
+                  </Button>
+                </Box>
               </Box>
             )}
           </CardContent>

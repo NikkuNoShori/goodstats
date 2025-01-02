@@ -1,324 +1,152 @@
+import { useState } from 'react';
 import {
   Box,
-  Typography,
   Button,
   TextField,
-  Stack,
-  useTheme,
-  CircularProgress,
-  Link as MuiLink,
+  Typography,
   Alert,
+  Link as MuiLink,
+  CircularProgress,
   Container,
+  Paper,
 } from '@mui/material';
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-
 import { supabase } from '../../services/supabase';
-import { AppTheme } from '../../theme/types';
 import { usePageTitle } from '../../utils/usePageTitle';
-import Header from '../common/Header';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import { ErrorBoundary } from 'react-error-boundary';
+import { useQueryClient } from '@tanstack/react-query';
 
-interface AuthError {
-  message: string;
-  status?: number;
-}
-
-const SignUpPage = () => {
-  usePageTitle('Sign Up');
-  const theme = useTheme<AppTheme>();
-  const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(false);
+const SignUpForm = () => {
+  const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    confirmPassword: '',
-  });
+  const [success, setSuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setSuccessMessage(null);
     setIsLoading(true);
-
+    setError(null);
+    
     try {
-      if (!formData.email) {
-        throw new Error('Email is required');
-      }
-
-      if (!formData.email.includes('@')) {
-        throw new Error('Please enter a valid email address');
-      }
-
-      if (formData.password !== formData.confirmPassword) {
-        throw new Error('Passwords do not match');
-      }
-
-      if (formData.password.length < 8) {
-        throw new Error('Password must be at least 8 characters long');
-      }
-
-      const hasUpperCase = /[A-Z]/.test(formData.password);
-      const hasLowerCase = /[a-z]/.test(formData.password);
-      const hasNumbers = /\d/.test(formData.password);
-      
-      if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
-        throw new Error('Password must contain at least one uppercase letter, one lowercase letter, and one number');
-      }
-
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: formData.email,
-        password: formData.password,
+      const { error } = await supabase.auth.signUp({
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/confirm`
+        }
       });
 
-      if (signUpError) {
-        const error = signUpError as AuthError;
-        switch (error.message) {
-          case 'User already registered':
-            throw new Error('This email is already registered. Please sign in instead.');
-          case 'Password should be at least 6 characters':
-            throw new Error('Password must be at least 6 characters long');
-          case 'Unable to validate email address: invalid format':
-            throw new Error('Please enter a valid email address');
-          case 'Password is too weak':
-            throw new Error('Please choose a stronger password');
-          case 'Rate limit exceeded':
-            throw new Error('Too many attempts. Please try again later.');
-          case 'Network error':
-            throw new Error('Network error. Please check your internet connection.');
-          default:
-            console.error('Unexpected signup error:', error);
-            throw new Error(error.message || 'Failed to create account');
-        }
-      }
+      if (error) throw error;
 
-      if (!authData.user) {
-        throw new Error('No user data returned');
-      }
-
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert([
-          {
-            id: authData.user.id,
-            email: authData.user.email,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            email_confirmed: false,
-          }
-        ]);
-
-      if (profileError) {
-        console.error('Profile creation error:', profileError);
-        if (profileError.message.includes('duplicate key')) {
-          throw new Error('An account with this email already exists');
-        }
-        throw new Error('Failed to create user profile');
-      }
-
-      setSuccessMessage('Account created successfully! Please check your email to verify your account.');
-      
-      setTimeout(() => {
-        navigate('/dashboard', { 
-          state: { 
-            emailPending: true,
-            message: 'Please verify your email to access all features'
-          }
-        });
-      }, 3000);
-
+      setSuccess(true);
+      queryClient.invalidateQueries(['profile']);
     } catch (err) {
-      console.error('Sign up error:', err);
       setError(err instanceof Error ? err.message : 'Failed to sign up');
-      setFormData(prev => ({
-        ...prev,
-        password: '',
-        confirmPassword: '',
-      }));
+      setSuccess(false);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <Box sx={{ background: '#1a1f2e', minHeight: '100vh' }}>
-      <Header title="Sign Up" showBreadcrumbs={false} />
-      
-      <Box 
-        sx={{ 
-          position: 'fixed',  // This will position relative to viewport
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
+    <Container maxWidth="sm">
+      <Box
+        sx={{
           display: 'flex',
+          flexDirection: 'column',
           alignItems: 'center',
-          justifyContent: 'center',
-          pointerEvents: 'none', // Allow clicking through to header
+          pt: 8,
+          pb: 6,
         }}
       >
-        <Container maxWidth="sm" sx={{ pointerEvents: 'auto' }}>
-          <Box sx={{ 
-            maxWidth: 400,
+        <RouterLink to="/" style={{ textDecoration: 'none' }}>
+          <Typography
+            variant="h4"
+            sx={{
+              fontWeight: 700,
+              background: 'linear-gradient(to right, #8B5CF6, #EC4899)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              mb: 4,
+            }}
+          >
+            GoodStats
+          </Typography>
+        </RouterLink>
+
+        <Paper
+          elevation={0}
+          sx={{
+            p: 4,
             width: '100%',
-            mx: 'auto',
-          }}>
-            {successMessage && (
-              <Alert severity="success" sx={{ mb: 2 }}>
-                {successMessage}
-              </Alert>
-            )}
-            
-            {error && (
-              <Alert 
-                severity="error"
-                sx={{ mb: 2 }}
-                onClose={() => setError(null)}
-              >
-                {error}
-              </Alert>
-            )}
+            background: 'rgba(255, 255, 255, 0.03)',
+            backdropFilter: 'blur(10px)',
+            borderRadius: 2,
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+          }}
+        >
+          <Typography variant="h5" textAlign="center" fontWeight={600} mb={3}>
+            Create Your Account
+          </Typography>
 
-            <form onSubmit={handleSubmit}>
-              <Stack spacing={2.5}>
-                <TextField
-                  fullWidth
-                  label="Email"
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  required
-                  disabled={isLoading}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                      '&:hover': {
-                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                      },
-                    },
-                    '& .MuiInputLabel-root': {
-                      color: 'rgba(255, 255, 255, 0.7)',
-                    },
-                    '& .MuiOutlinedInput-input': {
-                      color: 'white',
-                    },
-                  }}
-                />
-                <TextField
-                  fullWidth
-                  label="Password"
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  required
-                  disabled={isLoading}
-                  autoComplete="new-password"
-                  helperText="Must be at least 8 characters long"
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                      '&:hover': {
-                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                      },
-                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#7e3af2',
-                      },
-                    },
-                    '& .MuiInputLabel-root': {
-                      color: 'rgba(255, 255, 255, 0.7)',
-                      '&.Mui-focused': {
-                        color: '#7e3af2',
-                      },
-                    },
-                    '& .MuiOutlinedInput-input': {
-                      color: 'white',
-                    },
-                    '& .MuiFormHelperText-root': {
-                      color: 'rgba(255, 255, 255, 0.5)',
-                    },
-                  }}
-                />
-                <TextField
-                  fullWidth
-                  label="Confirm Password"
-                  type="password"
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleChange}
-                  required
-                  disabled={isLoading}
-                  autoComplete="new-password"
-                  error={formData.password !== formData.confirmPassword && formData.confirmPassword !== ''}
-                  helperText={
-                    formData.password !== formData.confirmPassword && formData.confirmPassword !== '' 
-                      ? 'Passwords do not match'
-                      : ' '
-                  }
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                      '&:hover': {
-                        backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                      },
-                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#7e3af2',
-                      },
-                    },
-                    '& .MuiInputLabel-root': {
-                      color: 'rgba(255, 255, 255, 0.7)',
-                      '&.Mui-focused': {
-                        color: '#7e3af2',
-                      },
-                    },
-                    '& .MuiOutlinedInput-input': {
-                      color: 'white',
-                    },
-                    '& .MuiFormHelperText-root': {
-                      color: theme.palette.error.main,
-                    },
-                  }}
-                />
-                <Button
-                  type="submit"
-                  variant="contained"
-                  size="large"
-                  disabled={isLoading}
-                  sx={{
-                    py: 1.5,
-                    backgroundColor: '#7e3af2',
-                    '&:hover': {
-                      backgroundColor: '#6c2bd9',
-                    },
-                  }}
-                >
-                  {isLoading ? (
-                    <CircularProgress size={24} color="inherit" />
-                  ) : (
-                    'Sign Up'
-                  )}
-                </Button>
-              </Stack>
-            </form>
+          <Typography
+            variant="body1"
+            sx={{
+              color: 'rgba(255, 255, 255, 0.7)',
+              mb: 3,
+              textAlign: 'center'
+            }}
+          >
+            We'll send you a magic link to get started - no password needed.
+          </Typography>
 
-            <Box sx={{ mt: 3, textAlign: 'center' }}>
-              <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+          {(error || success) && (
+            <Alert 
+              severity={success ? 'success' : 'error'}
+              sx={{ mb: 3 }}
+            >
+              {success ? 'Magic link sent! Check your email to verify your account.' : error}
+            </Alert>
+          )}
+
+          <form onSubmit={handleSignUp}>
+            <TextField
+              fullWidth
+              type="email"
+              label="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={success || isLoading}
+              required
+              sx={{ mb: 3 }}
+            />
+
+            <Button
+              type="submit"
+              variant="contained"
+              fullWidth
+              disabled={!email || success || isLoading}
+              sx={{
+                py: 1.5,
+                mb: 3,
+                background: 'linear-gradient(to right, #8B5CF6, #EC4899)',
+                '&:hover': {
+                  background: 'linear-gradient(to right, #7C3AED, #DB2777)',
+                },
+              }}
+            >
+              {isLoading ? <CircularProgress size={24} /> : success ? 'Check Your Email' : 'Create Account'}
+            </Button>
+
+            <Box sx={{ textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
                 Already have an account?{' '}
                 <MuiLink
-                  component={Link}
+                  component={RouterLink}
                   to="/signin"
                   sx={{
-                    color: '#7e3af2',
+                    color: '#8B5CF6',
                     textDecoration: 'none',
                     '&:hover': {
                       textDecoration: 'underline',
@@ -329,9 +157,69 @@ const SignUpPage = () => {
                 </MuiLink>
               </Typography>
             </Box>
-          </Box>
-        </Container>
+
+            {success && (
+              <Box sx={{ mt: 3, p: 2, bgcolor: 'rgba(255, 255, 255, 0.03)', borderRadius: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Can't find the email? Check your spam folder or{' '}
+                  <MuiLink
+                    component="button"
+                    onClick={() => {
+                      setSuccess(false);
+                      setError(null);
+                    }}
+                    sx={{
+                      color: '#8B5CF6',
+                      textDecoration: 'none',
+                      '&:hover': {
+                        textDecoration: 'underline',
+                      },
+                    }}
+                  >
+                    try again
+                  </MuiLink>
+                </Typography>
+              </Box>
+            )}
+          </form>
+        </Paper>
       </Box>
+    </Container>
+  );
+};
+
+const SignUpPage = () => {
+  usePageTitle('Sign Up');
+
+  const handleError = (error: Error) => {
+    console.error('Sign Up Error:', error);
+    return (
+      <Box sx={{ p: 3, textAlign: 'center', color: 'white' }}>
+        <Typography variant="h6">Something went wrong</Typography>
+        <Button
+          component={RouterLink}
+          to="/"
+          sx={{ mt: 2 }}
+          variant="contained"
+        >
+          Return Home
+        </Button>
+      </Box>
+    );
+  };
+
+  return (
+    <Box
+      sx={{
+        minHeight: '100vh',
+        background: '#111827',
+        backgroundImage: 'radial-gradient(circle at top right, rgba(139, 92, 246, 0.1), transparent 40%), radial-gradient(circle at bottom left, rgba(236, 72, 153, 0.1), transparent 40%)',
+        display: 'flex',
+      }}
+    >
+      <ErrorBoundary FallbackComponent={({ error }) => handleError(error)}>
+        <SignUpForm />
+      </ErrorBoundary>
     </Box>
   );
 };

@@ -1,58 +1,93 @@
-import { AppBar, Toolbar, Typography, Button, Box } from '@mui/material';
-import { Link, useLocation } from 'react-router-dom';
+import { AppBar, Box, Button, Container, IconButton, Stack, Toolbar, Typography } from '@mui/material';
+import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
+import { useProfile } from '../../hooks/useProfile';
 
-interface HeaderProps {
-  title?: string;
-}
+const Header = ({ isLandingPage = false, title = 'GoodStats' }) => {
+  const navigate = useNavigate();
+  const { profile, isLoading } = useProfile();
+  const isLoggedIn = !!profile?.id;
 
-const Header = ({ title }: HeaderProps) => {
-  const location = useLocation();
-
-  const handleSignOut = async () => {
+  const handleLogout = async () => {
     await supabase.auth.signOut();
+    navigate('/');
   };
 
   return (
-    <AppBar position="fixed" sx={{ bgcolor: '#1a1f2e', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-      <Toolbar>
-        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          {title || 'GoodStats'}
-        </Typography>
-        {location.pathname !== '/signin' && location.pathname !== '/signup' && (
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <Button
-              component={Link}
-              to="/dashboard"
-              color="inherit"
-              sx={{
-                opacity: location.pathname === '/dashboard' ? 1 : 0.7,
-                '&:hover': { opacity: 1 }
-              }}
-            >
-              Dashboard
-            </Button>
-            <Button
-              component={Link}
-              to="/manage-goodreads"
-              color="inherit"
-              sx={{
-                opacity: location.pathname === '/manage-goodreads' ? 1 : 0.7,
-                '&:hover': { opacity: 1 }
-              }}
-            >
-              Manage Goodreads
-            </Button>
-            <Button
-              color="inherit"
-              onClick={handleSignOut}
-              sx={{ opacity: 0.7, '&:hover': { opacity: 1 } }}
-            >
-              Sign Out
-            </Button>
-          </Box>
-        )}
-      </Toolbar>
+    <AppBar position="static" color="transparent" elevation={0}>
+      <Container maxWidth="lg">
+        <Toolbar disableGutters>
+          <Typography
+            variant="h6"
+            component={Link}
+            to="/"
+            sx={{
+              color: 'white',
+              textDecoration: 'none',
+              fontWeight: 'bold',
+              flexGrow: 1,
+            }}
+          >
+            {title}
+          </Typography>
+
+          {!isLoading && (
+            <Stack direction="row" spacing={2}>
+              {isLoggedIn ? (
+                <>
+                  <Button
+                    color="inherit"
+                    component={Link}
+                    to="/dashboard"
+                    sx={{ color: 'white' }}
+                  >
+                    Dashboard
+                  </Button>
+                  <Button
+                    color="inherit"
+                    component={Link}
+                    to="/manage-goodreads"
+                    sx={{ color: 'white' }}
+                  >
+                    Manage Goodreads
+                  </Button>
+                  <Button
+                    color="inherit"
+                    onClick={handleLogout}
+                    sx={{ color: 'white' }}
+                  >
+                    Logout
+                  </Button>
+                </>
+              ) : !isLandingPage && (
+                <>
+                  <Button
+                    color="inherit"
+                    component={Link}
+                    to="/signin"
+                    sx={{ color: 'white' }}
+                  >
+                    Sign In
+                  </Button>
+                  <Button
+                    variant="contained"
+                    component={Link}
+                    to="/signup"
+                    sx={{
+                      background: 'linear-gradient(120deg, #7e3af2, #9f7aea)',
+                      '&:hover': {
+                        background: 'linear-gradient(120deg, #6c2bd9, #9061ea)',
+                      },
+                    }}
+                  >
+                    Sign Up
+                  </Button>
+                </>
+              )}
+            </Stack>
+          )}
+        </Toolbar>
+      </Container>
     </AppBar>
   );
 };
