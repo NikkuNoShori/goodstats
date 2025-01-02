@@ -9,7 +9,10 @@ import {
   CircularProgress,
   Container,
   Paper,
+  InputAdornment,
+  IconButton,
 } from '@mui/material';
+import { Visibility, VisibilityOff } from '@mui/icons-material';
 import { supabase } from '../../services/supabase';
 import { usePageTitle } from '../../utils/usePageTitle';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
@@ -17,33 +20,65 @@ import { ErrorBoundary } from 'react-error-boundary';
 import { useQueryClient } from '@tanstack/react-query';
 
 const SignUpForm = () => {
-  const [email, setEmail] = useState('');
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    confirmPassword: '',
+    username: '',
+  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const validateForm = () => {
+    if (!formData.email) return 'Email is required';
+    if (!formData.password) return 'Password is required';
+    if (formData.password.length < 6) return 'Password must be at least 6 characters';
+    if (formData.password !== formData.confirmPassword) return 'Passwords do not match';
+    return null;
+  };
+
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     
     try {
-      const { error } = await supabase.auth.signUp({
-        email,
+      const { data: { user }, error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/confirm`
+          data: {
+            username: formData.username || undefined,
+          }
         }
       });
 
       if (error) throw error;
 
-      setSuccess(true);
-      queryClient.invalidateQueries(['profile']);
+      if (user) {
+        queryClient.invalidateQueries(['profile']);
+        navigate('/dashboard');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to sign up');
-      setSuccess(false);
     } finally {
       setIsLoading(false);
     }
@@ -90,35 +125,80 @@ const SignUpForm = () => {
             Create Your Account
           </Typography>
 
-          <Typography
-            variant="body1"
-            sx={{
-              color: 'rgba(255, 255, 255, 0.7)',
-              mb: 3,
-              textAlign: 'center'
-            }}
-          >
-            We'll send you a magic link to get started - no password needed.
-          </Typography>
-
-          {(error || success) && (
+          {error && (
             <Alert 
-              severity={success ? 'success' : 'error'}
+              severity="error"
               sx={{ mb: 3 }}
             >
-              {success ? 'Magic link sent! Check your email to verify your account.' : error}
+              {error}
             </Alert>
           )}
 
           <form onSubmit={handleSignUp}>
             <TextField
               fullWidth
-              type="email"
               label="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              disabled={success || isLoading}
+              type="email"
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
               required
+              sx={{ mb: 2 }}
+            />
+
+            <TextField
+              fullWidth
+              label="Username (optional)"
+              type="text"
+              name="username"
+              value={formData.username}
+              onChange={handleChange}
+              sx={{ mb: 2 }}
+            />
+
+            <TextField
+              fullWidth
+              label="Password"
+              type={showPassword ? 'text' : 'password'}
+              name="password"
+              value={formData.password}
+              onChange={handleChange}
+              required
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+              sx={{ mb: 2 }}
+            />
+
+            <TextField
+              fullWidth
+              label="Confirm Password"
+              type={showConfirmPassword ? 'text' : 'password'}
+              name="confirmPassword"
+              value={formData.confirmPassword}
+              onChange={handleChange}
+              required
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      edge="end"
+                    >
+                      {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
               sx={{ mb: 3 }}
             />
 
@@ -126,7 +206,7 @@ const SignUpForm = () => {
               type="submit"
               variant="contained"
               fullWidth
-              disabled={!email || success || isLoading}
+              disabled={isLoading}
               sx={{
                 py: 1.5,
                 mb: 3,
@@ -136,7 +216,7 @@ const SignUpForm = () => {
                 },
               }}
             >
-              {isLoading ? <CircularProgress size={24} /> : success ? 'Check Your Email' : 'Create Account'}
+              {isLoading ? <CircularProgress size={24} /> : 'Create Account'}
             </Button>
 
             <Box sx={{ textAlign: 'center' }}>
@@ -157,30 +237,6 @@ const SignUpForm = () => {
                 </MuiLink>
               </Typography>
             </Box>
-
-            {success && (
-              <Box sx={{ mt: 3, p: 2, bgcolor: 'rgba(255, 255, 255, 0.03)', borderRadius: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Can't find the email? Check your spam folder or{' '}
-                  <MuiLink
-                    component="button"
-                    onClick={() => {
-                      setSuccess(false);
-                      setError(null);
-                    }}
-                    sx={{
-                      color: '#8B5CF6',
-                      textDecoration: 'none',
-                      '&:hover': {
-                        textDecoration: 'underline',
-                      },
-                    }}
-                  >
-                    try again
-                  </MuiLink>
-                </Typography>
-              </Box>
-            )}
           </form>
         </Paper>
       </Box>

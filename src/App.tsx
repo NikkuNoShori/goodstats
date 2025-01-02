@@ -2,6 +2,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from 'react-error-boundary';
+import { SupabaseProvider } from './context/SupabaseProvider';
 import AppRoutes from './routes';
 import theme from './theme';
 
@@ -28,7 +29,9 @@ function App() {
         <ThemeProvider theme={theme}>
           <CssBaseline />
           <BrowserRouter>
-            <AppRoutes />
+            <SupabaseProvider>
+              <AppRoutes />
+            </SupabaseProvider>
           </BrowserRouter>
         </ThemeProvider>
       </QueryClientProvider>

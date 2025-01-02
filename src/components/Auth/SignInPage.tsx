@@ -20,11 +20,16 @@ import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 import { useQueryClient } from '@tanstack/react-query';
 
+interface AlertState {
+  message: string;
+  type: 'error' | 'success';
+}
+
 const SignInForm = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [alert, setAlert] = useState<AlertState | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -32,20 +37,30 @@ const SignInForm = () => {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError(null);
+    setAlert(null);
     
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
 
-      queryClient.invalidateQueries(['profile']);
-      navigate('/dashboard');
+      if (data.session) {
+        // Wait for session to be established
+        await supabase.auth.setSession(data.session);
+        queryClient.invalidateQueries(['profile']);
+        navigate('/dashboard');
+      } else {
+        throw new Error('No session returned after sign in');
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to sign in');
+      console.error('Sign in error:', err);
+      setAlert({
+        message: err instanceof Error ? err.message : 'Failed to sign in',
+        type: 'error'
+      });
     } finally {
       setIsLoading(false);
     }
@@ -53,7 +68,7 @@ const SignInForm = () => {
 
   const handleMagicLink = async () => {
     setIsLoading(true);
-    setError(null);
+    setAlert(null);
     
     try {
       const { error } = await supabase.auth.signInWithOtp({
@@ -65,9 +80,15 @@ const SignInForm = () => {
 
       if (error) throw error;
 
-      setError('Magic link sent! Check your email to sign in.');
+      setAlert({
+        message: 'Magic link sent! Check your email to sign in.',
+        type: 'success'
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send magic link');
+      setAlert({
+        message: err instanceof Error ? err.message : 'Failed to send magic link',
+        type: 'error'
+      });
     } finally {
       setIsLoading(false);
     }
@@ -114,12 +135,12 @@ const SignInForm = () => {
             Welcome Back
           </Typography>
 
-          {error && (
+          {alert && (
             <Alert 
-              severity={error.includes('Magic link sent') ? 'success' : 'error'}
+              severity={alert.type}
               sx={{ mb: 3 }}
             >
-              {error}
+              {alert.message}
             </Alert>
           )}
 

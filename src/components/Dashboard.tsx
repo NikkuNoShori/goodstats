@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useUser, useSupabaseClient } from '../hooks/useSupabase';
+import { useSupabaseClient } from '../hooks/useSupabase';
+import { useProfile } from '../hooks/useProfile';
 import {
   Box,
   Button,
@@ -77,6 +78,12 @@ interface BookCardProps {
 type SortOption = 'title_asc' | 'title_desc' | 'author_asc' | 'author_desc' | 'rating_desc' | 'rating_asc';
 
 const BookCard = ({ book }: BookCardProps) => {
+  const processImageUrl = (url: string) => {
+    if (!url) return '';
+    // Keep the base URL structure but request a larger size
+    return url.replace(/\._SX\d+_|._SY\d+_/g, '._SX300_');
+  };
+
   return (
     <Paper sx={{ 
       height: '100%',
@@ -85,20 +92,20 @@ const BookCard = ({ book }: BookCardProps) => {
       transition: 'transform 0.2s, box-shadow 0.2s',
       '&:hover': {
         transform: 'translateY(-4px)',
-        boxShadow: 6
+        boxShadow: 3
       }
     }}>
-      {/* Cover Image Section - reduced size */}
+      {/* Cover Image Section - adjusted aspect ratio and size */}
       <Box sx={{ 
         position: 'relative',
-        paddingTop: '112.5%', // Reduced from 150% to 112.5% (25% smaller)
+        paddingTop: '150%',
         width: '100%',
         overflow: 'hidden',
         bgcolor: 'grey.100'
       }}>
         {book.cover_image ? (
           <img
-            src={book.cover_image.replace(/._SX\d+_|._SY\d+_/g, '')}
+            src={processImageUrl(book.cover_image)}
             alt={`Cover of ${book.title}`}
             style={{
               position: 'absolute',
@@ -110,9 +117,16 @@ const BookCard = ({ book }: BookCardProps) => {
               imageRendering: '-webkit-optimize-contrast'
             }}
             loading="lazy"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+              target.parentElement?.querySelector('.no-cover-fallback')?.classList.remove('hidden');
+            }}
           />
-        ) : (
-          <Box sx={{
+        ) : null}
+        <Box 
+          className={`no-cover-fallback ${book.cover_image ? 'hidden' : ''}`}
+          sx={{
             position: 'absolute',
             top: 0,
             left: 0,
@@ -121,13 +135,14 @@ const BookCard = ({ book }: BookCardProps) => {
             bgcolor: 'grey.200',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
-          }}>
-            <Typography variant="body2" color="text.secondary">
-              No Cover
-            </Typography>
-          </Box>
-        )}
+            justifyContent: 'center',
+            visibility: book.cover_image ? 'hidden' : 'visible'
+          }}
+        >
+          <Typography variant="body2" color="text.secondary">
+            No Cover
+          </Typography>
+        </Box>
       </Box>
 
       {/* Book Details Section - adjusted spacing */}
@@ -218,10 +233,10 @@ export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>('title_asc');
   const [page, setPage] = useState(1);
-  const ITEMS_PER_PAGE = 12;
+  const [itemsPerPage, setItemsPerPage] = useState(12);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  const user = useUser();
+  const { profile } = useProfile();
   const supabase = useSupabaseClient();
   const queryClient = useQueryClient();
 
@@ -247,8 +262,8 @@ export default function Dashboard() {
   };
 
   const paginateBooks = (books: Book[]) => {
-    const startIndex = (page - 1) * ITEMS_PER_PAGE;
-    return books.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+    const startIndex = (page - 1) * itemsPerPage;
+    return books.slice(startIndex, startIndex + itemsPerPage);
   };
 
   const organizeShelfNames = (shelves: string[]) => {
@@ -263,20 +278,20 @@ export default function Dashboard() {
 
   // Remove continuous auth logging
   useEffect(() => {
-    if (process.env.NODE_ENV === 'development' && user) {
+    if (process.env.NODE_ENV === 'development' && profile) {
       console.debug('[Auth] User session initialized');
     }
-  }, [user]);
+  }, [profile]);
 
   // Update the books query with better deduplication
   const { data: books = [], isLoading: isBooksLoading, error: booksError } = useQuery({
-    queryKey: ['books', user?.id],
+    queryKey: ['books', profile?.id],
     queryFn: async () => {
-      if (!user?.id) return [];
+      if (!profile?.id) return [];
       const { data, error } = await supabase
         .from('books')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', profile.id)
         .order('updated_at', { ascending: false });
       
       if (error) throw error;
@@ -300,23 +315,7 @@ export default function Dashboard() {
       console.log('Fetched unique books count:', booksArray.length);
       return booksArray;
     },
-    enabled: !!user?.id
-  });
-
-  // Fetch user's profile
-  const { data: profile } = useQuery({
-    queryKey: ['profile', user?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user?.id)
-        .single();
-
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!user?.id
+    enabled: !!profile?.id
   });
 
   // Group books by shelf with better logging
@@ -343,15 +342,10 @@ export default function Dashboard() {
       }
     });
 
-    console.log('Total books:', books.length);
-    shelves.forEach((books, shelf) => {
-      console.log(`Shelf "${shelf}":`, books.length);
-    });
-    
     return shelves;
   }, [books]);
 
-  // Get unique shelf names for tabs with logging
+  // Get unique shelf names for tabs
   const shelfNames = useMemo(() => {
     const defaultShelves = ['all', 'read', 'currently-reading', 'to-read'];
     const customShelves = Array.from(booksByShelf.keys())
@@ -363,17 +357,17 @@ export default function Dashboard() {
       shelf === 'all' || booksByShelf.has(shelf)
     );
     
-    const names = [...availableDefaultShelves, ...customShelves];
-    console.log('Available shelves:', names);
-    return names;
+    return [...availableDefaultShelves, ...customShelves];
   }, [booksByShelf]);
 
   // Get books for current shelf with logging
   const currentShelfBooks = useMemo(() => {
-    const books = booksByShelf.get(selectedShelf) || [];
-    const sortedBooks = sortBooks(books);
-    return paginateBooks(sortedBooks);
-  }, [booksByShelf, selectedShelf, sortBy, page]);
+    const shelfBooks = booksByShelf.get(selectedShelf) || [];
+    const sortedBooks = sortBooks(shelfBooks);
+    const startIndex = (page - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return sortedBooks.slice(startIndex, endIndex);
+  }, [booksByShelf, selectedShelf, sortBy, page, itemsPerPage]);
 
   const handleGoodreadsUrlSubmit = () => {
     const goodreadsId = extractGoodreadsId(goodreadsUrl);
@@ -447,7 +441,7 @@ export default function Dashboard() {
   };
 
   const handleCrawlbaseSync = async (goodreadsId?: string | null) => {
-    if (!user?.id) {
+    if (!profile?.id) {
       setError('Please log in to sync with Goodreads');
       return;
     }
@@ -478,7 +472,7 @@ export default function Dashboard() {
         },
         credentials: 'include',
         body: JSON.stringify({ 
-          userId: user.id, 
+          userId: profile.id, 
           goodreadsId: idToUse 
         })
       });
@@ -540,10 +534,10 @@ export default function Dashboard() {
       console.log('Total unique synced books:', finalBooks.length);
       
       // Update the query cache with the new books
-      queryClient.setQueryData(['books', user.id], finalBooks);
+      queryClient.setQueryData(['books', profile.id], finalBooks);
 
       // Update profile
-      queryClient.setQueryData(['profile', user.id], (old: any) => ({
+      queryClient.setQueryData(['profile', profile.id], (old: any) => ({
         ...(old || {}),
         goodreads_user_id: idToUse,
         last_sync: new Date().toISOString()
@@ -561,14 +555,14 @@ export default function Dashboard() {
 
   // Add disconnect handler
   const handleDisconnect = async () => {
-    if (!user?.id) return;
+    if (!profile?.id) return;
 
     try {
       setIsLoading(true);
       setError(null);
 
       // Call cleanup endpoint with user ID
-      const response = await fetch(`http://localhost:3000/api/cleanup?user_id=${user.id}`, {
+      const response = await fetch(`http://localhost:3000/api/cleanup?user_id=${profile.id}`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json'
@@ -581,8 +575,8 @@ export default function Dashboard() {
       }
 
       // Clear React Query cache for this user's data
-      queryClient.removeQueries(['books', user.id]);
-      queryClient.removeQueries(['profile', user.id]);
+      queryClient.removeQueries(['books', profile.id]);
+      queryClient.removeQueries(['profile', profile.id]);
 
       // Reset all state
       setStats(null);
@@ -593,8 +587,8 @@ export default function Dashboard() {
       setGoodreadsUrl('');
 
       // Set empty data for this user
-      queryClient.setQueryData(['books', user.id], []);
-      queryClient.setQueryData(['profile', user.id], old => ({
+      queryClient.setQueryData(['books', profile.id], []);
+      queryClient.setQueryData(['profile', profile.id], old => ({
         ...(old || {}),
         goodreads_user_id: null,
         last_sync: null
@@ -602,8 +596,8 @@ export default function Dashboard() {
 
       // Force refetch to ensure UI updates
       await Promise.all([
-        queryClient.refetchQueries(['books', user.id]),
-        queryClient.refetchQueries(['profile', user.id])
+        queryClient.refetchQueries(['books', profile.id]),
+        queryClient.refetchQueries(['profile', profile.id])
       ]);
 
     } catch (error) {
@@ -615,7 +609,163 @@ export default function Dashboard() {
   };
 
   // Update pagination controls
-  const totalPages = Math.ceil((booksByShelf.get(selectedShelf)?.length || 0) / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil((booksByShelf.get(selectedShelf)?.length || 0) / itemsPerPage);
+
+  // Calculate stats whenever books change
+  useEffect(() => {
+    if (!books?.length) {
+      setStats(null);
+      return;
+    }
+
+    const totalBooks = books.length;
+    const uniqueShelves = new Set(books.flatMap(book => book.shelves || []));
+    const totalShelves = uniqueShelves.size;
+    
+    // Calculate average rating
+    const totalRating = books.reduce((sum, book) => sum + (book.rating || 0), 0);
+    const averageRating = totalRating / books.filter(book => book.rating > 0).length;
+
+    // Calculate books per shelf
+    const booksPerShelf: Record<string, number> = {};
+    books.forEach(book => {
+      (book.shelves || []).forEach(shelf => {
+        booksPerShelf[shelf] = (booksPerShelf[shelf] || 0) + 1;
+      });
+    });
+
+    // Calculate reading progress
+    const readingProgress = {
+      read: books.filter(book => book.shelves?.includes('read')).length,
+      reading: books.filter(book => book.shelves?.includes('currently-reading')).length,
+      toRead: books.filter(book => book.shelves?.includes('to-read')).length,
+      total: totalBooks
+    };
+
+    // Calculate top authors
+    const authorCounts: Record<string, number> = {};
+    books.forEach(book => {
+      authorCounts[book.author] = (authorCounts[book.author] || 0) + 1;
+    });
+    const topAuthors = Object.entries(authorCounts)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5)
+      .map(([author, count]) => ({ author, count }));
+
+    // Calculate rating distribution
+    const ratingDistribution: Record<string, number> = {};
+    books.forEach(book => {
+      if (book.rating) {
+        ratingDistribution[book.rating] = (ratingDistribution[book.rating] || 0) + 1;
+      }
+    });
+
+    setStats({
+      totalBooks,
+      totalShelves,
+      averageRating,
+      booksPerShelf,
+      readingProgress,
+      topAuthors,
+      ratingDistribution
+    });
+  }, [books]);
+
+  // Add the Statistics Overview component
+  const StatisticsOverview = () => {
+    if (!stats) return null;
+
+    return (
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h5" gutterBottom color="text.primary">
+          Reading Statistics
+        </Typography>
+        <Box sx={{ 
+          display: 'grid', 
+          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
+          gap: 2 
+        }}>
+          {/* Reading Progress */}
+          <Paper sx={{ p: 2 }}>
+            <Typography variant="h6" gutterBottom>Reading Progress</Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Read</Typography>
+                <LinearProgress 
+                  variant="determinate" 
+                  value={(stats.readingProgress.read / stats.readingProgress.total) * 100}
+                  sx={{ height: 8, borderRadius: 4 }}
+                />
+                <Typography variant="body2" color="text.secondary" align="right">
+                  {stats.readingProgress.read} books
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Currently Reading</Typography>
+                <LinearProgress 
+                  variant="determinate" 
+                  value={(stats.readingProgress.reading / stats.readingProgress.total) * 100}
+                  sx={{ height: 8, borderRadius: 4 }}
+                />
+                <Typography variant="body2" color="text.secondary" align="right">
+                  {stats.readingProgress.reading} books
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Want to Read</Typography>
+                <LinearProgress 
+                  variant="determinate" 
+                  value={(stats.readingProgress.toRead / stats.readingProgress.total) * 100}
+                  sx={{ height: 8, borderRadius: 4 }}
+                />
+                <Typography variant="body2" color="text.secondary" align="right">
+                  {stats.readingProgress.toRead} books
+                </Typography>
+              </Box>
+            </Box>
+          </Paper>
+
+          {/* Rating Overview */}
+          <Paper sx={{ p: 2 }}>
+            <Typography variant="h6" gutterBottom>Rating Overview</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h4" component="span" sx={{ mr: 1 }}>
+                {stats.averageRating.toFixed(1)}
+              </Typography>
+              <Rating 
+                value={stats.averageRating} 
+                readOnly 
+                precision={0.1}
+                sx={{ color: 'primary.main' }}
+              />
+            </Box>
+            <Typography variant="body2" color="text.secondary">
+              Average rating across {stats.totalBooks} books
+            </Typography>
+          </Paper>
+
+          {/* Top Authors */}
+          <Paper sx={{ p: 2 }}>
+            <Typography variant="h6" gutterBottom>Top Authors</Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableBody>
+                  {stats.topAuthors.map(({ author, count }) => (
+                    <TableRow key={author}>
+                      <TableCell component="th" scope="row">
+                        {author}
+                      </TableCell>
+                      <TableCell align="right">{count} books</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        </Box>
+      </Box>
+    );
+  };
 
   return (
     <Box sx={{ 
@@ -624,7 +774,119 @@ export default function Dashboard() {
       minHeight: '100vh',
       bgcolor: 'background.default'
     }}>
+      {/* Fixed Header */}
+      <Box
+        component="header"
+        sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: '64px',
+          bgcolor: 'background.paper',
+          borderBottom: 1,
+          borderColor: 'divider',
+          zIndex: 1000,
+          px: 3,
+          display: 'flex',
+          alignItems: 'center'
+        }}
+      >
+        <Box sx={{ 
+          maxWidth: 1200, 
+          width: '100%', 
+          mx: 'auto', 
+          display: 'flex', 
+          alignItems: 'center',
+          justifyContent: 'space-between'
+        }}>
+          {/* Logo and Title */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography
+              variant="h6"
+              component="div"
+              sx={{
+                fontWeight: 700,
+                color: 'primary.main',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1
+              }}
+            >
+              <Box sx={{ position: 'relative', width: '32px', height: '32px' }}>
+                <img 
+                  src="/src/assets/logo.png" 
+                  alt="" 
+                  style={{ 
+                    height: '100%',
+                    width: '100%',
+                    objectFit: 'contain'
+                  }}
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    target.nextElementSibling?.classList.remove('hidden');
+                  }}
+                />
+                <Box
+                  className="logo-fallback hidden"
+                  sx={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    bgcolor: 'primary.main',
+                    color: 'primary.contrastText',
+                    borderRadius: '4px',
+                    fontSize: '16px',
+                    fontWeight: 700
+                  }}
+                >
+                  G
+                </Box>
+              </Box>
+              GoodStats
+            </Typography>
+          </Box>
+
+          {/* Navigation Buttons */}
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              variant="text"
+              color="inherit"
+              sx={{ 
+                textTransform: 'none',
+                fontWeight: selectedShelf === 'all' ? 700 : 400
+              }}
+              onClick={() => setSelectedShelf('all')}
+            >
+              Dashboard
+            </Button>
+            <Button
+              variant="text"
+              color="inherit"
+              sx={{ textTransform: 'none' }}
+              onClick={() => setDialogOpen(true)}
+            >
+              Manage Goodreads
+            </Button>
+            <Button
+              variant="text"
+              color="inherit"
+              sx={{ textTransform: 'none' }}
+            >
+              Settings
+            </Button>
+          </Box>
+        </Box>
+      </Box>
+
       <Box sx={{ maxWidth: 1200, mx: 'auto', py: 4 }}>
+        {/* Header Section */}
         <Box sx={{ 
           display: 'flex', 
           justifyContent: 'space-between', 
@@ -634,33 +896,44 @@ export default function Dashboard() {
         }}>
           <Box>
             <Typography variant="h4" component="h1" gutterBottom>
-              Dashboard
+              Your Library
             </Typography>
             <Typography variant="body1" color="text.secondary">
-              View and manage your reading statistics
+              {books?.length} books in your collection
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={() => {
-              if (profile?.goodreads_user_id) {
-                handleCrawlbaseSync(profile.goodreads_user_id);
-              } else {
-                setDialogOpen(true);
-              }
-            }}
-            disabled={isLoading}
-            sx={{ height: 'fit-content' }}
-          >
-            Sync with Goodreads
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            {profile?.goodreads_user_id && (
+              <Button
+                variant="outlined"
+                color="error"
+                onClick={handleDisconnect}
+                disabled={isLoading}
+              >
+                Disconnect
+              </Button>
+            )}
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={() => {
+                if (profile?.goodreads_user_id) {
+                  handleCrawlbaseSync(profile.goodreads_user_id);
+                } else {
+                  setDialogOpen(true);
+                }
+              }}
+              disabled={isLoading || isSyncing}
+            >
+              {profile?.goodreads_user_id ? 'Sync Books' : 'Connect Goodreads'}
+            </Button>
+          </Box>
         </Box>
 
         {/* Alerts Section */}
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: error ? 4 : 0 }}>
           {error && (
-            <Alert severity="error" variant="filled">
+            <Alert severity="error" variant="filled" onClose={() => setError(null)}>
               {error}
             </Alert>
           )}
@@ -675,113 +948,7 @@ export default function Dashboard() {
         {syncProgress && <SyncProgress progress={syncProgress} />}
 
         {/* Statistics Overview */}
-        {stats && (
-          <Box sx={{ mb: 4 }}>
-            <Typography variant="h5" gutterBottom color="text.primary">
-              Reading Statistics
-            </Typography>
-            <Box sx={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
-              gap: 2 
-            }}>
-              {/* Reading Progress */}
-              <Paper sx={{ p: 2 }}>
-                <Typography variant="h6" gutterBottom>Reading Progress</Typography>
-                <Box sx={{ mb: 1.5 }}>
-                  <Typography variant="h4" sx={{ mb: 0.5 }}>{stats.totalBooks}</Typography>
-                  <Typography variant="body2" color="text.secondary">Total Books</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {[
-                    { label: 'Read', value: stats.readingProgress?.read || 0, color: 'success.main' },
-                    { label: 'Currently Reading', value: stats.readingProgress?.reading || 0, color: 'info.main' },
-                    { label: 'Want to Read', value: stats.readingProgress?.toRead || 0, color: 'warning.main' }
-                  ].map(({ label, value, color }) => (
-                    <Box key={label} sx={{ display: 'flex', flexDirection: 'column' }}>
-                      <Box sx={{ 
-                        display: 'flex', 
-                        justifyContent: 'space-between', 
-                        alignItems: 'center',
-                        mb: 0.5
-                      }}>
-                        <Typography variant="body2" color="text.secondary">{label}</Typography>
-                        <Typography variant="body2">{value}</Typography>
-                      </Box>
-                      <LinearProgress 
-                        variant="determinate" 
-                        value={stats.totalBooks ? (value / stats.totalBooks) * 100 : 0}
-                        sx={{ 
-                          height: 4, 
-                          borderRadius: 2,
-                          bgcolor: 'action.hover',
-                          '& .MuiLinearProgress-bar': {
-                            bgcolor: color
-                          }
-                        }}
-                      />
-                    </Box>
-                  ))}
-                </Box>
-              </Paper>
-
-              {/* Top Authors */}
-              {stats.topAuthors?.length > 0 && (
-                <Paper sx={{ p: 2 }}>
-                  <Typography variant="h6" gutterBottom>Top Authors</Typography>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                    {stats.topAuthors
-                      .slice(0, 5)
-                      .map(({ author, count }) => (
-                        <Box key={author} sx={{ 
-                          display: 'flex', 
-                          justifyContent: 'space-between',
-                          alignItems: 'center'
-                        }}>
-                          <Typography variant="body2">{author}</Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {count} {count === 1 ? 'book' : 'books'}
-                          </Typography>
-                        </Box>
-                      ))}
-                  </Box>
-                </Paper>
-              )}
-
-              {/* Ratings */}
-              {stats.averageRating > 0 && (
-                <Paper sx={{ p: 2 }}>
-                  <Typography variant="h6" gutterBottom>Ratings</Typography>
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="h4" sx={{ mb: 0.5 }}>{stats.averageRating.toFixed(1)}</Typography>
-                    <Typography variant="body2" color="text.secondary">Average Rating</Typography>
-                  </Box>
-                  {stats.ratingDistribution && (
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      {Object.entries(stats.ratingDistribution)
-                        .sort((a, b) => Number(b[0]) - Number(a[0]))
-                        .map(([rating, count]) => count > 0 && (
-                          <Box key={rating} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Rating value={parseInt(rating)} readOnly size="small" />
-                            <Box sx={{ flexGrow: 1 }}>
-                              <LinearProgress 
-                                variant="determinate" 
-                                value={(count / stats.totalBooks) * 100}
-                                sx={{ height: 4, borderRadius: 2 }}
-                              />
-                            </Box>
-                            <Typography variant="body2" sx={{ minWidth: 30 }} align="right">
-                              {count}
-                            </Typography>
-                          </Box>
-                        ))}
-                    </Box>
-                  )}
-                </Paper>
-              )}
-            </Box>
-          </Box>
-        )}
+        {!isBooksLoading && books?.length > 0 && <StatisticsOverview />}
 
         {/* Shelf Tabs */}
         {books?.length > 0 && (
@@ -878,7 +1045,7 @@ export default function Dashboard() {
           <>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
               <Typography variant="body2" color="text.secondary">
-                Showing {Math.min(page * ITEMS_PER_PAGE, (booksByShelf.get(selectedShelf)?.length || 0))} of {booksByShelf.get(selectedShelf)?.length || 0} books
+                Showing {Math.min(page * itemsPerPage, (booksByShelf.get(selectedShelf)?.length || 0))} of {booksByShelf.get(selectedShelf)?.length || 0} books
               </Typography>
               
               <FormControl size="small" sx={{ minWidth: 200 }}>
@@ -887,6 +1054,11 @@ export default function Dashboard() {
                   value={sortBy}
                   label="Sort by"
                   onChange={(e) => setSortBy(e.target.value as SortOption)}
+                  MenuProps={{
+                    PaperProps: {
+                      elevation: 4
+                    }
+                  }}
                 >
                   <MenuItem value="title_asc">Title (A-Z)</MenuItem>
                   <MenuItem value="title_desc">Title (Z-A)</MenuItem>
@@ -958,13 +1130,18 @@ export default function Dashboard() {
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
               <FormControl size="small" sx={{ minWidth: 120 }}>
                 <Select
-                  value={ITEMS_PER_PAGE}
+                  value={itemsPerPage}
                   onChange={(e) => {
                     const newItemsPerPage = Number(e.target.value);
-                    const currentFirstItem = (page - 1) * ITEMS_PER_PAGE;
+                    const currentFirstItem = (page - 1) * itemsPerPage;
                     const newPage = Math.floor(currentFirstItem / newItemsPerPage) + 1;
                     setPage(newPage);
                     setItemsPerPage(newItemsPerPage);
+                  }}
+                  MenuProps={{
+                    PaperProps: {
+                      elevation: 4
+                    }
                   }}
                 >
                   <MenuItem value={12}>12 per page</MenuItem>
