@@ -66,34 +66,6 @@ const SignInForm = () => {
     }
   };
 
-  const handleMagicLink = async () => {
-    setIsLoading(true);
-    setAlert(null);
-    
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/confirm`
-        }
-      });
-
-      if (error) throw error;
-
-      setAlert({
-        message: 'Magic link sent! Check your email to sign in.',
-        type: 'success'
-      });
-    } catch (err) {
-      setAlert({
-        message: err instanceof Error ? err.message : 'Failed to send magic link',
-        type: 'error'
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
     <Container maxWidth="sm">
       <Box
@@ -195,9 +167,9 @@ const SignInForm = () => {
                     fontSize: '1.05rem',
                   },
                   '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
-                    '-webkit-box-shadow': '0 0 0 30px rgba(30, 41, 59, 0.8) inset !important',
-                    '-webkit-text-fill-color': 'white !important',
-                    'caret-color': 'white',
+                    WebkitBoxShadow: '0 0 0 30px rgba(30, 41, 59, 0.8) inset !important',
+                    WebkitTextFillColor: 'white !important',
+                    caretColor: 'white',
                   },
                 }}
                 required
@@ -263,9 +235,9 @@ const SignInForm = () => {
                     fontSize: '1.05rem',
                   },
                   '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
-                    '-webkit-box-shadow': '0 0 0 30px rgba(30, 41, 59, 0.8) inset !important',
-                    '-webkit-text-fill-color': 'white !important',
-                    'caret-color': 'white',
+                    WebkitBoxShadow: '0 0 0 30px rgba(30, 41, 59, 0.8) inset !important',
+                    WebkitTextFillColor: 'white !important',
+                    caretColor: 'white',
                   },
                 }}
                 InputLabelProps={{
@@ -313,29 +285,6 @@ const SignInForm = () => {
               {isLoading ? <CircularProgress size={24} /> : 'Sign In'}
             </Button>
           </form>
-
-          <Divider sx={{ my: 3 }}>
-            <Typography variant="body2" color="text.secondary">
-              OR
-            </Typography>
-          </Divider>
-
-          <Button
-            fullWidth
-            variant="outlined"
-            onClick={handleMagicLink}
-            disabled={!email || isLoading}
-            sx={{
-              py: 1.5,
-              mb: 3,
-              borderColor: 'rgba(255, 255, 255, 0.1)',
-              '&:hover': {
-                borderColor: 'rgba(255, 255, 255, 0.3)',
-              },
-            }}
-          >
-            Continue with Magic Link
-          </Button>
 
           <Box sx={{ textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">

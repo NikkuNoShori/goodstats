@@ -82,8 +82,19 @@ type SortOption = 'title_asc' | 'title_desc' | 'author_asc' | 'author_desc' | 'r
 const BookCard = ({ book }: BookCardProps) => {
   const processImageUrl = (url: string) => {
     if (!url) return '';
-    // Keep the base URL structure but request a larger size
-    return url.replace(/\._SX\d+_|._SY\d+_/g, '._SX300_');
+    
+    // Extract ISBN from Goodreads URL
+    const isbnMatch = url.match(/\/(\d+)(?:[^\/]*?)$/);
+    const isbn = isbnMatch ? isbnMatch[1] : null;
+    
+    // Use Open Library API for images
+    if (isbn) {
+      return `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`;
+    }
+    
+    // If no ISBN found, try Google Books API as fallback
+    const titleQuery = encodeURIComponent(book.title + ' ' + book.author);
+    return `https://books.google.com/books/content?vid=isbn${book.isbn}&printsec=frontcover&img=1&zoom=1`;
   };
 
   return (
@@ -97,7 +108,7 @@ const BookCard = ({ book }: BookCardProps) => {
         boxShadow: 3
       }
     }}>
-      {/* Cover Image Section - adjusted aspect ratio and size */}
+      {/* Cover Image Section */}
       <Box sx={{ 
         position: 'relative',
         paddingTop: '150%',
@@ -105,44 +116,73 @@ const BookCard = ({ book }: BookCardProps) => {
         overflow: 'hidden',
         bgcolor: 'grey.100'
       }}>
-        {book.cover_image ? (
-          <img
-            src={processImageUrl(book.cover_image)}
-            alt={`Cover of ${book.title}`}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              imageRendering: '-webkit-optimize-contrast'
-            }}
-            loading="lazy"
-            onError={(e) => {
-              const target = e.target as HTMLImageElement;
-              target.style.display = 'none';
-              target.parentElement?.querySelector('.no-cover-fallback')?.classList.remove('hidden');
-            }}
-          />
-        ) : null}
+        <img
+          src={processImageUrl(book.cover_image || '')}
+          alt={`Cover of ${book.title}`}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            imageRendering: '-webkit-optimize-contrast'
+          }}
+          loading="lazy"
+          onError={(e) => {
+            const target = e.target as HTMLImageElement;
+            target.style.display = 'none';
+            // Show placeholder when image fails to load
+            const placeholder = target.parentElement?.querySelector('.placeholder');
+            if (placeholder) {
+              (placeholder as HTMLElement).style.display = 'flex';
+            }
+          }}
+        />
+        
+        {/* Placeholder */}
         <Box 
-          className={`no-cover-fallback ${book.cover_image ? 'hidden' : ''}`}
+          className="placeholder"
           sx={{
             position: 'absolute',
             top: 0,
             left: 0,
             width: '100%',
             height: '100%',
-            bgcolor: 'grey.200',
-            display: 'flex',
+            bgcolor: 'grey.100',
+            display: 'none',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            visibility: book.cover_image ? 'hidden' : 'visible'
+            border: '1px solid',
+            borderColor: 'grey.300',
+            padding: 2,
+            textAlign: 'center'
           }}
         >
-          <Typography variant="body2" color="text.secondary">
-            No Cover
+          <Box sx={{ 
+            fontSize: '3rem', 
+            color: 'grey.400',
+            mb: 1
+          }}>
+            📚
+          </Box>
+          <Typography 
+            variant="body2" 
+            color="text.secondary"
+            sx={{
+              fontWeight: 500,
+              fontSize: '0.8rem'
+            }}
+          >
+            {book.title}
+          </Typography>
+          <Typography 
+            variant="caption" 
+            color="text.disabled"
+            sx={{ mt: 0.5 }}
+          >
+            by {book.author}
           </Typography>
         </Box>
       </Box>
