@@ -109,10 +109,11 @@ const Header = ({
                       variant="text"
                       onClick={handleLogout}
                       sx={{ 
+                        borderColor: 'error.light',
                         color: 'error.light',
                         '&:hover': {
+                          borderColor: 'error.main',
                           color: 'error.main',
-                          bgcolor: 'error.dark',
                           bgcolor: 'rgba(244, 67, 54, 0.08)'
                         }
                       }}
@@ -156,10 +157,11 @@ const Header = ({
                       variant="text"
                       onClick={handleLogout}
                       sx={{ 
+                        borderColor: 'error.light',
                         color: 'error.light',
                         '&:hover': {
+                          borderColor: 'error.main',
                           color: 'error.main',
-                          bgcolor: 'error.dark',
                           bgcolor: 'rgba(244, 67, 54, 0.08)'
                         }
                       }}

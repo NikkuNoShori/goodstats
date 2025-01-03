@@ -1,38 +1,34 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useSupabaseClient } from '../hooks/useSupabase';
 import { useProfile } from '../hooks/useProfile';
+import { useImageCache } from '../hooks/useImageCache';
 import {
   Box,
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
   Typography,
   Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
   Rating,
   Alert,
   CircularProgress,
-  Tabs,
-  Tab,
   LinearProgress,
-  Container,
   Chip,
   Select,
   MenuItem,
   FormControl,
-  InputLabel
+  InputLabel,
+  TextField,
+  Skeleton,
+  Pagination,
+  Fade,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  SelectChangeEvent
 } from '@mui/material';
-import { makeApiCall } from '../utils/api';
 import Header from './common/Header';
+import debounce from 'lodash/debounce';
 
 interface Book {
   id?: number;
@@ -47,14 +43,20 @@ interface Book {
   shelves?: string[];
   page_count?: number;
   cover_image?: string;
-  updated_at?: string;
+  created_at?: string;
+  uniqueKey?: string;
 }
 
-interface SyncProgress {
-  stage: 'fetching' | 'parsing' | 'saving' | 'complete';
-  current: number;
+interface TopAuthor {
+  author: string;
+  count: number;
+}
+
+interface ReadingProgress {
+  read: number;
+  reading: number;
+  toRead: number;
   total: number;
-  message: string;
 }
 
 interface Stats {
@@ -68,132 +70,186 @@ interface Stats {
     toRead: number;
     total: number;
   };
-  topAuthors: Array<{ author: string; count: number }>;
+  topAuthors: Array<{
+    author: string;
+    count: number;
+  }>;
   ratingDistribution: Record<string, number>;
   ratedBooksCount: number;
 }
 
-interface BookCardProps {
-  book: Book;
+interface SyncProgress {
+  stage: 'fetching' | 'parsing' | 'saving' | 'complete';
+  current: number;
+  total: number;
+  message: string;
 }
 
 type SortOption = 'title_asc' | 'title_desc' | 'author_asc' | 'author_desc' | 'rating_desc' | 'rating_asc';
 
-const BookCard = ({ book }: BookCardProps) => {
-  const processImageUrl = (url: string) => {
-    if (!url) return '';
-    
-    // Extract ISBN from Goodreads URL
-    const isbnMatch = url.match(/\/(\d+)(?:[^\/]*?)$/);
-    const isbn = isbnMatch ? isbnMatch[1] : null;
-    
-    // Use Open Library API for images
-    if (isbn) {
-      return `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`;
+interface QueryError {
+  message: string;
+  [key: string]: any;
+}
+
+interface PaginationState {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
+
+// Image loading utility function
+const getBookCoverUrl = (book: Book): string | null => {
+  if (!book.isbn && !book.title) return null;
+
+  const isbn = book.isbn?.replace(/-/g, '');
+  const cleanTitle = encodeURIComponent(book.title);
+  const cleanAuthor = encodeURIComponent(book.author || '');
+
+  if (isbn) {
+    return `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`;
+  }
+
+  return `https://books.google.com/books/content?q=${cleanTitle}+${cleanAuthor}&zoom=1&img=1`;
+};
+
+const BookCard = ({ book }: { book: Book }) => {
+  const { getCachedUrl, updateCache, shouldRetry } = useImageCache();
+  const [imageError, setImageError] = useState(false);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadImage = async () => {
+      if (!book.isbn) {
+        setImageUrl(getBookCoverUrl(book));
+        return;
+      }
+
+      const cachedEntry = getCachedUrl(book.isbn);
+      
+      if (cachedEntry && cachedEntry.success) {
+        setImageUrl(cachedEntry.url);
+        return;
+      }
+
+      if (!shouldRetry(book.isbn)) {
+        setImageError(true);
+        return;
+      }
+
+      const url = getBookCoverUrl(book);
+      setImageUrl(url);
+    };
+
+    setImageError(false);
+    loadImage();
+  }, [book, getCachedUrl, shouldRetry]);
+
+  const handleImageError = () => {
+    if (book.isbn) {
+      updateCache(book.isbn, false);
     }
-    
-    // If no ISBN found, try Google Books API as fallback
-    const titleQuery = encodeURIComponent(book.title + ' ' + book.author);
-    return `https://books.google.com/books/content?vid=isbn${book.isbn}&printsec=frontcover&img=1&zoom=1`;
+    setImageError(true);
+  };
+
+  const handleImageLoad = () => {
+    if (book.isbn) {
+      updateCache(book.isbn, true);
+    }
   };
 
   return (
-    <Paper sx={{ 
-      height: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      transition: 'transform 0.2s, box-shadow 0.2s',
-      '&:hover': {
-        transform: 'translateY(-4px)',
-        boxShadow: 3
-      }
-    }}>
-      {/* Cover Image Section */}
-      <Box sx={{ 
-        position: 'relative',
-        paddingTop: '150%',
-        width: '100%',
-        overflow: 'hidden',
-        bgcolor: 'grey.100'
-      }}>
-        <img
-          src={processImageUrl(book.cover_image || '')}
-          alt={`Cover of ${book.title}`}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            imageRendering: '-webkit-optimize-contrast'
-          }}
-          loading="lazy"
-          onError={(e) => {
-            const target = e.target as HTMLImageElement;
-            target.style.display = 'none';
-            // Show placeholder when image fails to load
-            const placeholder = target.parentElement?.querySelector('.placeholder');
-            if (placeholder) {
-              (placeholder as HTMLElement).style.display = 'flex';
-            }
-          }}
-        />
-        
-        {/* Placeholder */}
-        <Box 
-          className="placeholder"
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            bgcolor: 'grey.100',
-            display: 'none',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px solid',
-            borderColor: 'grey.300',
-            padding: 2,
-            textAlign: 'center'
-          }}
-        >
-          <Box sx={{ 
-            fontSize: '3rem', 
-            color: 'grey.400',
-            mb: 1
-          }}>
-            📚
-          </Box>
-          <Typography 
-            variant="body2" 
-            color="text.secondary"
+    <Paper 
+      elevation={1}
+      sx={{ 
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        transition: 'transform 0.2s, box-shadow 0.2s',
+        '&:hover': {
+          transform: 'translateY(-4px)',
+          boxShadow: 3
+        }
+      }}
+    >
+      <Box 
+        sx={{ 
+          position: 'relative',
+          paddingTop: '150%',
+          width: '100%',
+          overflow: 'hidden',
+          bgcolor: 'grey.100'
+        }}
+      >
+        {!imageError && imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={`Cover of ${book.title}`}
+            onError={handleImageError}
+            onLoad={handleImageLoad}
+            loading="lazy"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover'
+            }}
+          />
+        ) : (
+          <Box
             sx={{
-              fontWeight: 500,
-              fontSize: '0.8rem'
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              bgcolor: 'grey.200',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              p: 2
             }}
           >
-            {book.title}
-          </Typography>
-          <Typography 
-            variant="caption" 
-            color="text.disabled"
-            sx={{ mt: 0.5 }}
-          >
-            by {book.author}
-          </Typography>
-        </Box>
+            <Typography 
+              variant="body2" 
+              color="text.secondary" 
+              sx={{ 
+                textAlign: 'center',
+                overflow: 'hidden',
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical',
+                width: '100%',
+                fontWeight: 500
+              }}
+            >
+              {book.title}
+            </Typography>
+            <Typography 
+              variant="caption" 
+              color="text.secondary" 
+              sx={{ 
+                mt: 1,
+                textAlign: 'center',
+                fontStyle: 'italic'
+              }}
+            >
+              by {book.author}
+            </Typography>
+          </Box>
+        )}
       </Box>
 
-      {/* Book Details Section - adjusted spacing */}
       <Box sx={{ p: 1.5, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
         <Typography 
           variant="h6" 
           component="h3" 
           sx={{ 
-            fontSize: '0.95rem', // Reduced from 1.1rem
+            fontSize: '0.95rem',
             fontWeight: 600,
             mb: 0.5,
             lineHeight: 1.2,
@@ -212,7 +268,7 @@ const BookCard = ({ book }: BookCardProps) => {
           color="text.secondary"
           sx={{ 
             mb: 1,
-            fontSize: '0.85rem' // Reduced font size
+            fontSize: '0.85rem'
           }}
         >
           {book.author}
@@ -228,14 +284,13 @@ const BookCard = ({ book }: BookCardProps) => {
               sx={{ 
                 color: 'primary.main',
                 '& .MuiRating-icon': {
-                  fontSize: '0.9rem' // Made stars slightly smaller
+                  fontSize: '0.9rem'
                 }
               }}
             />
           </Box>
         )}
 
-        {/* Shelves Tags */}
         {book.shelves && book.shelves.length > 0 && (
           <Box sx={{ 
             display: 'flex', 
@@ -245,7 +300,7 @@ const BookCard = ({ book }: BookCardProps) => {
           }}>
             {book.shelves
               .filter(shelf => shelf.toLowerCase() !== 'all')
-              .map((shelf) => (
+              .map(shelf => (
                 <Chip
                   key={shelf}
                   label={shelf}
@@ -253,8 +308,8 @@ const BookCard = ({ book }: BookCardProps) => {
                   sx={{ 
                     bgcolor: 'primary.main',
                     color: 'primary.contrastText',
-                    fontSize: '0.7rem', // Reduced from 0.75rem
-                    height: '20px' // Reduced from 24px
+                    fontSize: '0.7rem',
+                    height: '20px'
                   }}
                 />
               ))}
@@ -265,935 +320,539 @@ const BookCard = ({ book }: BookCardProps) => {
   );
 };
 
-export default function Dashboard() {
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [goodreadsUrl, setGoodreadsUrl] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [selectedShelf, setSelectedShelf] = useState<string>('all');
-  const [isLoading, setIsLoading] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [sortBy, setSortBy] = useState<SortOption>('title_asc');
-  const [page, setPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(12);
-  const [isSyncing, setIsSyncing] = useState(false);
-
-  const { profile } = useProfile();
-  const supabase = useSupabaseClient();
-  const queryClient = useQueryClient();
-
-  const sortBooks = (books: Book[]) => {
-    return [...books].sort((a, b) => {
-      switch (sortBy) {
-        case 'title_asc':
-          return a.title.localeCompare(b.title);
-        case 'title_desc':
-          return b.title.localeCompare(a.title);
-        case 'author_asc':
-          return a.author.localeCompare(b.author);
-        case 'author_desc':
-          return b.author.localeCompare(a.author);
-        case 'rating_desc':
-          return (b.rating || 0) - (a.rating || 0);
-        case 'rating_asc':
-          return (a.rating || 0) - (b.rating || 0);
-        default:
-          return 0;
-      }
-    });
-  };
-
-  const paginateBooks = (books: Book[]) => {
-    const startIndex = (page - 1) * itemsPerPage;
-    return books.slice(startIndex, startIndex + itemsPerPage);
-  };
-
-  const organizeShelfNames = (shelves: string[]) => {
-    const defaultShelves = ['all', 'read', 'currently-reading', 'to-read'];
-    const customShelves = shelves.filter(shelf => !defaultShelves.includes(shelf));
-    
-    return [
-      ...defaultShelves.filter(shelf => shelves.includes(shelf)),
-      ...customShelves.sort((a, b) => a.localeCompare(b))
-    ];
-  };
-
-  // Remove continuous auth logging
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development' && profile) {
-      console.debug('[Auth] User session initialized');
-    }
-  }, [profile]);
-
-  // Update the books query with better deduplication
-  const { data: books = [], isLoading: isBooksLoading, error: booksError } = useQuery({
-    queryKey: ['books', profile?.id],
-    queryFn: async () => {
-      if (!profile?.id) return [];
-      console.log('Fetching books for user:', profile.id);
-      const { data, error } = await supabase
-        .from('books')
-        .select('*')
-        .eq('user_id', profile.id)
-        .order('updated_at', { ascending: false });
-      
-      if (error) throw error;
-      
-      // Log raw data before processing
-      console.log('Raw books data from Supabase:', data);
-      console.log('Books with ratings:', data?.filter(book => book.rating > 0).map(book => ({
-        title: book.title,
-        rating: book.rating
-      })));
-      
-      // More robust deduplication using a composite key
-      const uniqueBooks = new Map();
-      data?.forEach(book => {
-        // Create a stable unique key for each book
-        const key = `${book.goodreads_id || ''}-${book.isbn || ''}-${book.title.toLowerCase()}-${book.author.toLowerCase()}`;
-        if (!uniqueBooks.has(key) || 
-            new Date(book.updated_at) > new Date(uniqueBooks.get(key).updated_at)) {
-          uniqueBooks.set(key, {
-            ...book,
-            uniqueKey: key,
-            shelves: book.shelves?.filter(shelf => shelf.toLowerCase() !== 'all') || []
-          });
-        }
-      });
-      
-      const booksArray = Array.from(uniqueBooks.values());
-      console.log('Final processed books with ratings:', booksArray.filter(book => book.rating > 0).length);
-      return booksArray;
+const LoadingSkeleton = () => (
+  <Box sx={{ 
+    display: 'grid',
+    gridTemplateColumns: {
+      xs: 'repeat(2, 1fr)',
+      sm: 'repeat(3, 1fr)',
+      md: 'repeat(4, 1fr)',
+      lg: 'repeat(6, 1fr)'
     },
-    enabled: !!profile?.id
-  });
+    gap: 2
+  }}>
+    {Array.from({ length: 24 }).map((_, i) => (
+      <Skeleton 
+        key={i}
+        variant="rectangular"
+        sx={{ 
+          paddingTop: '150%',
+          borderRadius: 1
+        }}
+      />
+    ))}
+  </Box>
+);
 
-  // Group books by shelf with better logging
-  const booksByShelf = useMemo(() => {
-    const shelves = new Map<string, Book[]>();
-    
-    if (!Array.isArray(books)) {
-      console.warn('Books is not an array:', books);
-      return new Map([['all', []]]);
-    }
+const LoadingOverlay = () => (
+  <Fade in={true} timeout={300}>
+    <Box sx={{ 
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      bgcolor: 'rgba(255, 255, 255, 0.7)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1
+    }}>
+      <CircularProgress />
+    </Box>
+  </Fade>
+);
 
-    // Initialize with all books
-    shelves.set('all', books);
-    
-    // Group books by shelf
-    books.forEach(book => {
-      if (book?.shelves) {
-        book.shelves.forEach(shelf => {
-          if (!shelves.has(shelf)) {
-            shelves.set(shelf, []);
-          }
-          shelves.get(shelf)!.push(book);
-        });
-      }
-    });
+// Increase cache times and add retry configuration
+const QUERY_CONFIG = {
+  staleTime: 10 * 60 * 1000, // 10 minutes
+  cacheTime: 60 * 60 * 1000, // 1 hour
+  retry: false, // Disable automatic retries
+  refetchOnWindowFocus: false, // Disable refetch on window focus
+  refetchOnMount: false // Disable refetch on mount
+};
 
-    return shelves;
-  }, [books]);
-
-  // Get unique shelf names for tabs
-  const shelfNames = useMemo(() => {
-    const defaultShelves = ['all', 'read', 'currently-reading', 'to-read'];
-    const customShelves = Array.from(booksByShelf.keys())
-      .filter(shelf => !defaultShelves.includes(shelf))
-      .sort((a, b) => a.localeCompare(b));
-    
-    // Ensure we only include default shelves that actually have books
-    const availableDefaultShelves = defaultShelves.filter(shelf => 
-      shelf === 'all' || booksByShelf.has(shelf)
-    );
-    
-    return [...availableDefaultShelves, ...customShelves];
-  }, [booksByShelf]);
-
-  // Get books for current shelf with logging
-  const currentShelfBooks = useMemo(() => {
-    const shelfBooks = booksByShelf.get(selectedShelf) || [];
-    const sortedBooks = sortBooks(shelfBooks);
-    const startIndex = (page - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    return sortedBooks.slice(startIndex, endIndex);
-  }, [booksByShelf, selectedShelf, sortBy, page, itemsPerPage]);
-
-  const handleGoodreadsUrlSubmit = () => {
-    const goodreadsId = extractGoodreadsId(goodreadsUrl);
-    if (goodreadsId) {
-      if (process.env.NODE_ENV === 'development') {
-        console.debug('[Sync] Starting sync with Goodreads ID:', goodreadsId);
-      }
-      handleCrawlbaseSync(goodreadsId);
-      setDialogOpen(false);
-      setGoodreadsUrl('');
-    } else {
-      setError('Invalid Goodreads URL. Please enter a valid profile URL.');
-    }
-  };
-
-  const extractGoodreadsId = (url: string) => {
-    try {
-      // Handle various Goodreads URL patterns
-      const patterns = [
-        /goodreads\.com\/user\/show\/(\d+)/,
-        /goodreads\.com\/review\/list\/(\d+)/,
-        /goodreads\.com\/user\/(\d+)/,
-        /\/(\d+)(?:\?|$)/
-      ];
-
-      for (const pattern of patterns) {
-        const match = url.match(pattern);
-        if (match) {
-          return match[1];
-        }
-      }
-
-      return null;
-    } catch (error) {
-      console.error('[URL] Error extracting Goodreads ID:', error);
-      return null;
-    }
-  };
-
-  // Add this component for sync progress
-  const SyncProgress = ({ progress }: { progress: SyncProgress | null }) => {
-    if (!progress || progress.stage === 'complete') return null;
-    
-    return (
-      <Paper sx={{ p: 3, mb: 4 }}>
-        <Box sx={{ mb: 2 }}>
+const SyncDialog = ({ open, onClose, progress }: { open: boolean; onClose: () => void; progress: SyncProgress }) => {
+  return (
+    <Dialog open={open} onClose={onClose}>
+      <DialogTitle>Syncing with Goodreads</DialogTitle>
+      <DialogContent>
+        <Box sx={{ minWidth: 400, py: 2 }}>
           <Typography variant="h6" gutterBottom>
-            Syncing with Goodreads
+            {progress.stage === 'complete' ? 'Sync Complete!' : 'Syncing...'}
           </Typography>
-          <Typography variant="body2" color="text.secondary">
+          
+          <Typography variant="body2" color="text.secondary" gutterBottom>
             {progress.message}
           </Typography>
+          
+          {progress.stage !== 'complete' && (
+            <LinearProgress 
+              variant="determinate" 
+              value={(progress.current / progress.total) * 100}
+              sx={{ mt: 2 }}
+            />
+          )}
+          
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            {progress.current} of {progress.total} books processed
+          </Typography>
         </Box>
-        <Box sx={{ width: '100%' }}>
-          <LinearProgress 
-            variant="determinate" 
-            value={(progress.current / progress.total) * 100}
-            sx={{ height: 8, borderRadius: 4 }}
-          />
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-            <Typography variant="caption" color="text.secondary">
-              {progress.stage.charAt(0).toUpperCase() + progress.stage.slice(1)}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {progress.current} of {progress.total}
-            </Typography>
-          </Box>
-        </Box>
-      </Paper>
-    );
-  };
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} color="primary">
+          Close
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
 
-  const handleCrawlbaseSync = async (goodreadsId?: string | null) => {
-    if (!profile?.id) {
-      setError('Please log in to sync with Goodreads');
-      return;
-    }
+export default function Dashboard() {
+  const supabase = useSupabaseClient();
+  const { profile, isLoading: isProfileLoading, error: profileError } = useProfile();
+  
+  // Pagination state
+  const [pagination, setPagination] = useState<PaginationState>({
+    page: 1,
+    pageSize: 24, // 4x6 grid on large screens
+    totalItems: 0,
+    totalPages: 1
+  });
 
-    const idToUse = goodreadsId || profile?.goodreads_user_id;
-    if (!idToUse) {
-      setDialogOpen(true);
-      return;
-    }
+  // Sort and filter state
+  const [sortOption, setSortOption] = useState<SortOption>('title_asc');
+  const [selectedShelf, setSelectedShelf] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress>({
+    stage: 'fetching',
+    current: 0,
+    total: 0,
+    message: 'Preparing to sync...'
+  });
 
-    if (isSyncing) {
-      console.log('Sync already in progress');
-      return;
-    }
+  // Debounced search handler
+  const debouncedSearch = useCallback(
+    debounce((value: string) => {
+      setDebouncedSearchQuery(value);
+    }, 500),
+    []
+  );
 
-    setIsSyncing(true);
-    setIsLoading(true);
-    setError(null);
-    setSyncProgress(null);
+  // Update debounced search
+  useEffect(() => {
+    debouncedSearch(searchQuery);
+    return () => {
+      debouncedSearch.cancel();
+    };
+  }, [searchQuery, debouncedSearch]);
+
+  // Handle sync with Goodreads
+  const handleSync = async () => {
+    setSyncDialogOpen(true);
+    setSyncProgress({
+      stage: 'fetching',
+      current: 0,
+      total: 0,
+      message: 'Fetching books from Goodreads...'
+    });
 
     try {
-      const API_URL = 'http://localhost:3000';
-      const response = await fetch(`${API_URL}/api/crawl-goodreads`, {
+      const response = await fetch('/api/sync', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'text/event-stream'
-        },
-        credentials: 'include',
-        body: JSON.stringify({ 
-          userId: profile.id, 
-          goodreadsId: idToUse 
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to sync with Goodreads (${response.status}): ${errorText}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('Failed to initialize stream reader');
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-      const uniqueBooks = new Map();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              
-              if (data.error) throw new Error(data.error);
-              if (data.progress) setSyncProgress(data.progress);
-              if (data.stats) setStats(data.stats);
-
-              if (data.books) {
-                data.books.forEach(book => {
-                  const key = `${book.goodreads_id || ''}-${book.isbn || ''}-${book.title.toLowerCase()}-${book.author.toLowerCase()}`;
-                  if (!uniqueBooks.has(key) || 
-                      new Date(book.updated_at) > new Date(uniqueBooks.get(key).updated_at)) {
-                    uniqueBooks.set(key, {
-                      ...book,
-                      uniqueKey: key,
-                      shelves: book.shelves?.filter(shelf => shelf.toLowerCase() !== 'all') || []
-                    });
-                  }
-                });
-              }
-            } catch (e) {
-              console.error('Error parsing SSE data:', e);
-              throw new Error('Error processing data from Goodreads');
-            }
-          }
-        }
-      }
-
-      // Update books once at the end
-      const finalBooks = Array.from(uniqueBooks.values());
-      console.log('Total unique synced books:', finalBooks.length);
-      
-      // Update the query cache with the new books
-      queryClient.setQueryData(['books', profile.id], finalBooks);
-
-      // Update profile
-      queryClient.setQueryData(['profile', profile.id], (old: any) => ({
-        ...(old || {}),
-        goodreads_user_id: idToUse,
-        last_sync: new Date().toISOString()
-      }));
-
-    } catch (error) {
-      console.error('Sync Error:', error);
-      setError(error instanceof Error ? error.message : 'Failed to sync with Goodreads');
-    } finally {
-      setIsSyncing(false);
-      setIsLoading(false);
-      setSyncProgress(null);
-    }
-  };
-
-  // Add disconnect handler
-  const handleDisconnect = async () => {
-    if (!profile?.id) return;
-
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Call cleanup endpoint with user ID
-      const response = await fetch(`http://localhost:3000/api/cleanup?user_id=${profile.id}`, {
-        method: 'DELETE',
         headers: {
           'Content-Type': 'application/json'
         }
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to cleanup database');
+        throw new Error('Failed to sync with Goodreads');
       }
 
-      // Clear React Query cache for this user's data
-      queryClient.removeQueries(['books', profile.id]);
-      queryClient.removeQueries(['profile', profile.id]);
-
-      // Reset all state
-      setStats(null);
-      setError(null);
-      setSyncProgress(null);
-      setSelectedShelf('all');
-      setDialogOpen(false);
-      setGoodreadsUrl('');
-
-      // Set empty data for this user
-      queryClient.setQueryData(['books', profile.id], []);
-      queryClient.setQueryData(['profile', profile.id], old => ({
-        ...(old || {}),
-        goodreads_user_id: null,
-        last_sync: null
+      setSyncProgress(prev => ({
+        ...prev,
+        stage: 'complete',
+        message: 'Successfully synced with Goodreads!'
       }));
-
-      // Force refetch to ensure UI updates
-      await Promise.all([
-        queryClient.refetchQueries(['books', profile.id]),
-        queryClient.refetchQueries(['profile', profile.id])
-      ]);
-
-    } catch (error) {
-      console.error('Error disconnecting from Goodreads:', error);
-      setError(error instanceof Error ? error.message : 'Failed to disconnect from Goodreads');
-    } finally {
-      setIsLoading(false);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      setSyncProgress(prev => ({
+        ...prev,
+        stage: 'complete',
+        message: `Error syncing: ${errorMessage}`
+      }));
     }
   };
 
-  // Update pagination controls
-  const totalPages = Math.ceil((booksByShelf.get(selectedShelf)?.length || 0) / itemsPerPage);
+  // Books query with pagination and caching
+  const { data: books = [], isLoading, error } = useQuery<Book[], QueryError>({
+    queryKey: ['books', profile?.id, pagination.page, pagination.pageSize, sortOption, selectedShelf, debouncedSearchQuery],
+    queryFn: async () => {
+      if (!profile?.id) return [];
+      
+      let query = supabase
+        .from('books')
+        .select('*', { count: 'exact' })
+        .eq('user_id', profile.id);
 
-  // Calculate stats whenever books change
-  useEffect(() => {
-    if (!books?.length) {
-      console.log('No books available, setting stats to null');
-      setStats(null);
-      return;
-    }
-
-    console.log('Calculating stats for', books.length, 'books');
-
-    // Calculate average rating properly
-    const ratedBooks = books.filter(book => typeof book.rating === 'number' && book.rating > 0);
-    console.log('Found rated books:', ratedBooks.map(book => ({
-      title: book.title,
-      rating: book.rating
-    })));
-
-    const averageRating = ratedBooks.length > 0 
-      ? ratedBooks.reduce((sum, book) => sum + book.rating, 0) / ratedBooks.length 
-      : 0;
-
-    console.log('Calculated average rating:', averageRating);
-    console.log('Number of rated books:', ratedBooks.length);
-
-    // Rest of the stats calculation...
-    const totalBooks = books.length;
-    const uniqueShelves = new Set(books.flatMap(book => book.shelves || []));
-    const totalShelves = uniqueShelves.size;
-    
-    // Calculate reading progress
-    const readingProgress = {
-      read: books.filter(book => 
-        book.shelves?.some(shelf => 
-          shelf.toLowerCase().includes('read') && 
-          !shelf.toLowerCase().includes('to-read') && 
-          !shelf.toLowerCase().includes('currently-reading')
-        )
-      ).length,
-      reading: books.filter(book => 
-        book.shelves?.some(shelf => 
-          shelf.toLowerCase().includes('currently-reading')
-        )
-      ).length,
-      toRead: books.filter(book => 
-        book.shelves?.some(shelf => 
-          shelf.toLowerCase().includes('to-read') || 
-          shelf.toLowerCase().includes('want-to-read')
-        )
-      ).length,
-      total: totalBooks
-    };
-
-    // Calculate rating distribution with proper filtering
-    const ratingDistribution: Record<string, number> = {
-      '1': 0, '2': 0, '3': 0, '4': 0, '5': 0
-    };
-    ratedBooks.forEach(book => {
-      const rating = Math.round(book.rating).toString();
-      if (rating in ratingDistribution) {
-        ratingDistribution[rating]++;
+      // Apply shelf filter
+      if (selectedShelf !== 'all') {
+        query = query.contains('shelves', [selectedShelf]);
       }
-    });
 
-    // Calculate books per shelf
-    const booksPerShelf: Record<string, number> = {};
+      // Apply search filter
+      if (debouncedSearchQuery) {
+        query = query.or(`title.ilike.%${debouncedSearchQuery}%,author.ilike.%${debouncedSearchQuery}%`);
+      }
+
+      // Apply sorting
+      const [field, direction] = sortOption.split('_');
+      query = query.order(field, { ascending: direction === 'asc' });
+
+      // Apply pagination
+      query = query.range(
+        (pagination.page - 1) * pagination.pageSize,
+        pagination.page * pagination.pageSize - 1
+      );
+
+      const { data, error, count } = await query;
+      
+      if (error) throw error;
+      
+      if (count !== null) {
+        setPagination(prev => ({
+          ...prev,
+          totalItems: count,
+          totalPages: Math.ceil(count / pagination.pageSize)
+        }));
+      }
+      
+      return data || [];
+    },
+    enabled: !!profile?.id,
+    ...QUERY_CONFIG
+  });
+
+  // Stats query
+  const { data: stats, isLoading: isStatsLoading } = useQuery<Stats, QueryError>({
+    queryKey: ['stats', profile?.id],
+    queryFn: async (): Promise<Stats> => {
+      if (!profile?.id) {
+        return {
+          totalBooks: 0,
+          totalShelves: 0,
+          averageRating: 0,
+          booksPerShelf: {},
+          readingProgress: { read: 0, reading: 0, toRead: 0, total: 0 },
+          topAuthors: [],
+          ratingDistribution: {},
+          ratedBooksCount: 0
+        };
+      }
+      
+      const { data: books, error } = await supabase
+        .from('books')
+        .select('*')
+        .eq('user_id', profile.id);
+      
+      if (error) throw error;
+      if (!books) {
+        throw new Error('No books data returned');
+      }
+
+      // Calculate statistics
+      const totalBooks = books.length;
+      const shelvesList = books.flatMap(book => book.shelves || []);
+      const uniqueShelves = new Set(shelvesList);
+      const totalShelves = uniqueShelves.size;
+
+      const ratedBooks = books.filter(book => book.rating > 0);
+      const averageRating = ratedBooks.length > 0
+        ? ratedBooks.reduce((sum, book) => sum + (book.rating || 0), 0) / ratedBooks.length
+        : 0;
+
+      const booksPerShelf = shelvesList.reduce<Record<string, number>>((acc, shelf) => {
+        acc[shelf] = (acc[shelf] || 0) + 1;
+        return acc;
+      }, {});
+
+      const readingProgress = {
+        read: books.filter(book => book.shelves?.includes('read')).length,
+        reading: books.filter(book => book.shelves?.includes('currently-reading')).length,
+        toRead: books.filter(book => book.shelves?.includes('to-read')).length,
+        total: totalBooks
+      };
+
+      const authorCounts = books.reduce<Record<string, number>>((acc, book) => {
+        if (book.author) {
+          acc[book.author] = (acc[book.author] || 0) + 1;
+        }
+        return acc;
+      }, {});
+
+      const topAuthors = Object.entries(authorCounts)
+        .map(([author, count]): { author: string; count: number } => ({ 
+          author, 
+          count 
+        }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+
+      const ratingDistribution = books.reduce<Record<string, number>>((acc, book) => {
+        if (book.rating > 0) {
+          acc[book.rating.toString()] = (acc[book.rating.toString()] || 0) + 1;
+        }
+        return acc;
+      }, {});
+
+      return {
+        totalBooks,
+        totalShelves,
+        averageRating,
+        booksPerShelf,
+        readingProgress,
+        topAuthors,
+        ratingDistribution,
+        ratedBooksCount: ratedBooks.length
+      };
+    },
+    enabled: !!profile?.id,
+    ...QUERY_CONFIG
+  });
+
+  // Get unique shelves
+  const shelves = useMemo(() => {
+    const shelfSet = new Set<string>();
     books.forEach(book => {
-      (book.shelves || []).forEach(shelf => {
-        booksPerShelf[shelf] = (booksPerShelf[shelf] || 0) + 1;
-      });
+      book.shelves?.forEach(shelf => shelfSet.add(shelf));
     });
-
-    // Calculate top authors
-    const authorCounts: Record<string, number> = {};
-    books.forEach(book => {
-      authorCounts[book.author] = (authorCounts[book.author] || 0) + 1;
-    });
-    const topAuthors = Object.entries(authorCounts)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 5)
-      .map(([author, count]) => ({ author, count }));
-
-    const newStats = {
-      totalBooks,
-      totalShelves,
-      averageRating,
-      booksPerShelf,
-      readingProgress,
-      topAuthors,
-      ratingDistribution,
-      ratedBooksCount: ratedBooks.length
-    };
-
-    console.log('Setting new stats:', newStats);
-    setStats(newStats);
+    return ['all', ...Array.from(shelfSet)].sort();
   }, [books]);
 
-  // Add debug logging to StatisticsOverview
-  const StatisticsOverview = () => {
-    console.log('Rendering StatisticsOverview with stats:', stats);
-    if (!stats) return null;
+  // Event handlers
+  const handlePageChange = (_: React.ChangeEvent<unknown>, newPage: number) => {
+    setPagination(prev => ({ ...prev, page: newPage }));
+  };
 
+  const handleSortChange = (event: SelectChangeEvent<string>) => {
+    setSortOption(event.target.value as SortOption);
+  };
+
+  const handleShelfChange = (event: SelectChangeEvent<string>) => {
+    setSelectedShelf(event.target.value);
+  };
+
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(event.target.value);
+  };
+
+  // Show loading state while profile is loading
+  if (isProfileLoading) {
+    return <LoadingSkeleton />;
+  }
+
+  // Show error if profile failed to load
+  if (profileError) {
     return (
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h5" gutterBottom color="text.primary">
-          Reading Statistics
-        </Typography>
-        <Box sx={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
-          gap: 2 
-        }}>
-          {/* Reading Progress */}
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>Reading Progress</Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <Box>
-                <Typography variant="body2" color="text.secondary">Read</Typography>
-                <LinearProgress 
-                  variant="determinate" 
-                  value={(stats.readingProgress.read / stats.readingProgress.total) * 100}
-                  sx={{ height: 8, borderRadius: 4 }}
-                />
-                <Typography variant="body2" color="text.secondary" align="right">
-                  {stats.readingProgress.read} books
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="body2" color="text.secondary">Currently Reading</Typography>
-                <LinearProgress 
-                  variant="determinate" 
-                  value={(stats.readingProgress.reading / stats.readingProgress.total) * 100}
-                  sx={{ height: 8, borderRadius: 4 }}
-                />
-                <Typography variant="body2" color="text.secondary" align="right">
-                  {stats.readingProgress.reading} books
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="body2" color="text.secondary">Want to Read</Typography>
-                <LinearProgress 
-                  variant="determinate" 
-                  value={(stats.readingProgress.toRead / stats.readingProgress.total) * 100}
-                  sx={{ height: 8, borderRadius: 4 }}
-                />
-                <Typography variant="body2" color="text.secondary" align="right">
-                  {stats.readingProgress.toRead} books
-                </Typography>
-              </Box>
-            </Box>
-          </Paper>
-
-          {/* Rating Overview */}
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>Rating Overview</Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h4" component="span" sx={{ mr: 1 }}>
-                {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : 'No ratings'}
-              </Typography>
-              {stats.averageRating > 0 && (
-                <Rating 
-                  value={stats.averageRating} 
-                  readOnly 
-                  precision={0.1}
-                  sx={{ color: 'primary.main' }}
-                />
-              )}
-            </Box>
-            <Typography variant="body2" color="text.secondary">
-              Average rating across {stats.ratedBooksCount} rated books
-            </Typography>
-          </Paper>
-
-          {/* Top Authors */}
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>Top Authors</Typography>
-            <TableContainer>
-              <Table size="small">
-                <TableBody>
-                  {stats.topAuthors.map(({ author, count }) => (
-                    <TableRow key={author}>
-                      <TableCell component="th" scope="row">
-                        {author}
-                      </TableCell>
-                      <TableCell align="right">{count} books</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Paper>
-        </Box>
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">
+          {profileError instanceof Error 
+            ? profileError.message 
+            : 'Failed to load profile. Please try logging in again.'}
+        </Alert>
       </Box>
     );
-  };
+  }
+
+  // Show error if no profile is found
+  if (!profile) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="warning">
+          No profile found. Please log in again.
+        </Alert>
+      </Box>
+    );
+  }
+
+  if (isLoading || isStatsLoading) {
+    return <LoadingSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">
+          Error loading books: {error.message}
+        </Alert>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ 
       minHeight: '100vh',
-      bgcolor: 'background.default'
+      bgcolor: 'background.default',
+      pt: 8,
+      px: 3
     }}>
-      <Header 
-        onManageGoodreads={() => setDialogOpen(true)}
-        selectedShelf={selectedShelf}
-        onShelfSelect={setSelectedShelf}
-      />
+      <Header />
       
-      <Box sx={{ 
-        maxWidth: 1200, 
-        mx: 'auto', 
-        py: 4,
-        px: 3,
-        mt: '64px' // Add margin for fixed header
-      }}>
-        {/* Header Section */}
-        <Box sx={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center', 
-          mb: 4,
-          width: '100%'
-        }}>
-          <Box>
-            <Typography variant="h4" component="h1" gutterBottom>
-              Your Library
-            </Typography>
-            <Typography variant="body1" color="text.secondary">
-              {books?.length} books in your collection
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            {profile?.goodreads_user_id && (
-              <Button
-                variant="outlined"
-                color="error"
-                onClick={handleDisconnect}
-                disabled={isLoading}
-                sx={{
-                  borderColor: 'error.light',
-                  color: 'error.light',
-                  '&:hover': {
-                    borderColor: 'error.main',
-                    color: 'error.main',
-                    bgcolor: 'rgba(244, 67, 54, 0.08)'
-                  }
-                }}
-              >
-                Disconnect
-              </Button>
-            )}
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={() => {
-                if (profile?.goodreads_user_id) {
-                  handleCrawlbaseSync(profile.goodreads_user_id);
-                } else {
-                  setDialogOpen(true);
-                }
-              }}
-              disabled={isLoading || isSyncing}
-            >
-              {profile?.goodreads_user_id ? 'Sync Books' : 'Connect Goodreads'}
-            </Button>
-          </Box>
+      {/* Loading State */}
+      {isLoading && (
+        <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1100 }}>
+          <LinearProgress />
         </Box>
+      )}
 
-        {/* Alerts Section */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mb: error ? 4 : 0 }}>
-          {error && (
-            <Alert severity="error" variant="filled" onClose={() => setError(null)}>
-              {error}
-            </Alert>
-          )}
-          {booksError && (
-            <Alert severity="error" variant="filled">
-              Error loading books: {booksError.message}
-            </Alert>
-          )}
-        </Box>
+      {/* Sync Dialog */}
+      <SyncDialog
+        open={syncDialogOpen}
+        onClose={() => setSyncDialogOpen(false)}
+        progress={syncProgress}
+      />
 
-        {/* Sync Progress */}
-        {syncProgress && <SyncProgress progress={syncProgress} />}
-
-        {/* Statistics Overview */}
-        {!isBooksLoading && books?.length > 0 && <StatisticsOverview />}
-
-        {/* Shelf Tabs */}
-        {books?.length > 0 && (
-          <Paper 
-            elevation={2} 
-            sx={{ 
-              mb: 4, 
-              borderRadius: 2, 
-              overflow: 'hidden',
-              bgcolor: 'background.paper'
-            }}
-          >
-            <Tabs
-              value={selectedShelf}
-              onChange={(_, newValue) => {
-                setSelectedShelf(newValue);
-                setPage(1); // Reset to first page when changing shelves
-              }}
-              variant="scrollable"
-              scrollButtons="auto"
-              sx={{
-                borderBottom: 1,
-                borderColor: 'divider',
-                minHeight: 56,
-                '& .MuiTabs-flexContainer': {
-                  gap: 1, // Add spacing between tabs
-                },
-                '& .MuiTab-root': {
-                  textTransform: 'capitalize',
-                  minWidth: 'auto', // Allow tabs to be more compact
-                  fontSize: '0.95rem',
-                  fontWeight: 500,
-                  py: 2,
-                  px: 2.5, // Add horizontal padding
-                  '&.Mui-selected': {
-                    color: 'primary.main',
-                    fontWeight: 600
-                  }
-                }
-              }}
-            >
-              {shelfNames.map(shelf => {
-                const count = booksByShelf.get(shelf)?.length || 0;
-                const label = shelf === 'all' 
-                  ? 'All Books'
-                  : shelf === 'currently-reading'
-                  ? 'Reading'
-                  : shelf === 'to-read'
-                  ? 'Want to Read'
-                  : shelf === 'read'
-                  ? 'Read'
-                  : shelf;
-
-                return (
-                  <Tab
-                    key={shelf}
-                    label={
-                      <Box sx={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: 1,
-                        color: 'inherit',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        <span>{label}</span>
-                        <Chip
-                          label={count}
-                          size="small"
-                          sx={{ 
-                            bgcolor: 'action.selected',
-                            color: 'text.secondary',
-                            height: 24,
-                            '& .MuiChip-label': {
-                              px: 1,
-                              fontSize: '0.75rem'
-                            }
-                          }}
-                        />
-                      </Box>
-                    }
-                    value={shelf}
-                  />
-                );
-              })}
-            </Tabs>
-          </Paper>
+      {/* Main Content */}
+      <Box sx={{ p: 3 }}>
+        {/* Stats Section */}
+        {stats && (
+          <Box sx={{ maxWidth: 1200, mx: 'auto', mb: 4 }}>
+            <Paper sx={{ p: 3 }}>
+              <Typography variant="h6" sx={{ mb: 2 }}>Library Overview</Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 3 }}>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Total Books</Typography>
+                  <Typography variant="h4">{stats.totalBooks}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Average Rating</Typography>
+                  <Typography variant="h4">{stats.averageRating.toFixed(1)}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Shelves</Typography>
+                  <Typography variant="h4">{stats.totalShelves}</Typography>
+                </Box>
+              </Box>
+            </Paper>
+          </Box>
         )}
 
-        {isBooksLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
+        {/* Filters Section */}
+        <Box sx={{ 
+          mb: 3, 
+          display: 'flex', 
+          gap: 2,
+          flexWrap: 'wrap',
+          alignItems: 'center' 
+        }}>
+          <TextField
+            size="small"
+            placeholder="Search books..."
+            value={searchQuery}
+            onChange={handleSearchChange}
+            sx={{ flexGrow: 1, maxWidth: 300 }}
+          />
+          
+          <FormControl size="small" sx={{ minWidth: 200 }}>
+            <InputLabel>Sort by</InputLabel>
+            <Select
+              value={sortOption}
+              label="Sort by"
+              onChange={handleSortChange}
+            >
+              <MenuItem value="title_asc">Title (A-Z)</MenuItem>
+              <MenuItem value="title_desc">Title (Z-A)</MenuItem>
+              <MenuItem value="author_asc">Author (A-Z)</MenuItem>
+              <MenuItem value="author_desc">Author (Z-A)</MenuItem>
+              <MenuItem value="rating_desc">Rating (High-Low)</MenuItem>
+              <MenuItem value="rating_asc">Rating (Low-High)</MenuItem>
+            </Select>
+          </FormControl>
+
+          <FormControl size="small" sx={{ minWidth: 200 }}>
+            <InputLabel>Shelf</InputLabel>
+            <Select
+              value={selectedShelf}
+              label="Shelf"
+              onChange={handleShelfChange}
+            >
+              {shelves.map(shelf => (
+                <MenuItem key={shelf} value={shelf}>
+                  {shelf.charAt(0).toUpperCase() + shelf.slice(1)}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+
+        {/* Books Grid */}
+        <Box sx={{ position: 'relative' }}>
+          {isLoading && <LoadingOverlay />}
+          
+          <Box sx={{ 
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: 'repeat(2, 1fr)',
+              sm: 'repeat(3, 1fr)',
+              md: 'repeat(4, 1fr)',
+              lg: 'repeat(6, 1fr)'
+            },
+            gap: 2,
+            opacity: isLoading ? 0.3 : 1,
+            transition: 'opacity 0.3s'
+          }}>
+            {books.map((book) => (
+              <BookCard key={book.uniqueKey || book.id} book={book} />
+            ))}
           </Box>
-        ) : books?.length > 0 ? (
-          <>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+
+          {/* No Results */}
+          {!isLoading && books.length === 0 && (
+            <Box sx={{ 
+              maxWidth: 1200, 
+              mx: 'auto', 
+              textAlign: 'center',
+              mt: 4 
+            }}>
+              <Typography variant="h6" color="text.secondary">
+                No books found
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Try adjusting your filters or search query
+              </Typography>
+            </Box>
+          )}
+
+          {/* Pagination Controls */}
+          {!isLoading && books.length > 0 && (
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: 'column',
+              alignItems: 'center',
+              mt: 4,
+              mb: 2,
+              gap: 2
+            }}>
               <Typography variant="body2" color="text.secondary">
-                Showing {Math.min(page * itemsPerPage, (booksByShelf.get(selectedShelf)?.length || 0))} of {booksByShelf.get(selectedShelf)?.length || 0} books
+                Showing {((pagination.page - 1) * pagination.pageSize) + 1} - {Math.min(pagination.page * pagination.pageSize, pagination.totalItems)} of {pagination.totalItems} books
               </Typography>
               
-              <FormControl size="small" sx={{ minWidth: 200 }}>
-                <InputLabel>Sort by</InputLabel>
-                <Select
-                  value={sortBy}
-                  label="Sort by"
-                  onChange={(e) => setSortBy(e.target.value as SortOption)}
-                  MenuProps={{
-                    PaperProps: {
-                      elevation: 4
-                    }
-                  }}
-                >
-                  <MenuItem value="title_asc">Title (A-Z)</MenuItem>
-                  <MenuItem value="title_desc">Title (Z-A)</MenuItem>
-                  <MenuItem value="author_asc">Author (A-Z)</MenuItem>
-                  <MenuItem value="author_desc">Author (Z-A)</MenuItem>
-                  <MenuItem value="rating_desc">Rating (High to Low)</MenuItem>
-                  <MenuItem value="rating_asc">Rating (Low to High)</MenuItem>
-                </Select>
-              </FormControl>
+              <Pagination
+                page={pagination.page}
+                count={pagination.totalPages}
+                onChange={handlePageChange}
+                color="primary"
+                showFirstButton
+                showLastButton
+                siblingCount={1}
+                boundaryCount={1}
+              />
             </Box>
-
-            <Box sx={{ 
-              display: 'grid',
-              gridTemplateColumns: {
-                xs: 'repeat(2, 1fr)',
-                sm: 'repeat(3, 1fr)',
-                md: 'repeat(4, 1fr)',
-                lg: 'repeat(6, 1fr)'  // Increased from 5 to 6 columns to make cards smaller
-              },
-              gap: 1.5  // Reduced gap from 2 to 1.5
-            }}>
-              {currentShelfBooks?.map((book) => (
-                <BookCard 
-                  key={book.uniqueKey}
-                  book={book} 
-                />
-              ))}
-            </Box>
-
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', mt: 4, gap: 2 }}>
-              <Button
-                disabled={page === 1}
-                onClick={() => setPage(1)}
-                variant="outlined"
-                size="small"
-              >
-                First
-              </Button>
-              <Button
-                disabled={page === 1}
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                variant="outlined"
-              >
-                Previous
-              </Button>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mx: 2 }}>
-                <Typography variant="body2">
-                  Page {page} of {totalPages}
-                </Typography>
-              </Box>
-              <Button
-                disabled={page >= totalPages}
-                onClick={() => setPage(p => p + 1)}
-                variant="outlined"
-              >
-                Next
-              </Button>
-              <Button
-                disabled={page >= totalPages}
-                onClick={() => setPage(totalPages)}
-                variant="outlined"
-                size="small"
-              >
-                Last
-              </Button>
-            </Box>
-
-            {/* Update the items per page control */}
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-              <FormControl size="small" sx={{ minWidth: 120 }}>
-                <Select
-                  value={itemsPerPage}
-                  onChange={(e) => {
-                    const newItemsPerPage = Number(e.target.value);
-                    const currentFirstItem = (page - 1) * itemsPerPage;
-                    const newPage = Math.floor(currentFirstItem / newItemsPerPage) + 1;
-                    setPage(newPage);
-                    setItemsPerPage(newItemsPerPage);
-                  }}
-                  MenuProps={{
-                    PaperProps: {
-                      elevation: 4
-                    }
-                  }}
-                >
-                  <MenuItem value={12}>12 per page</MenuItem>
-                  <MenuItem value={24}>24 per page</MenuItem>
-                  <MenuItem value={48}>48 per page</MenuItem>
-                  <MenuItem value={96}>96 per page</MenuItem>
-                </Select>
-              </FormControl>
-            </Box>
-          </>
-        ) : (
-          <Paper sx={{ p: 4, textAlign: 'center' }}>
-            <Typography variant="body1" color="text.secondary">
-              No books found. Enter your Goodreads profile URL to load your books.
-            </Typography>
-          </Paper>
-        )}
+          )}
+        </Box>
       </Box>
-
-      <Dialog 
-        open={dialogOpen} 
-        onClose={() => setDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: {
-            width: '125%',  // Make it 25% larger
-            maxWidth: '600px'  // Set a reasonable max width
-          }
-        }}
-      >
-        <DialogTitle sx={{ fontSize: '1.5rem', pb: 2 }}>Connect Goodreads</DialogTitle>
-        <DialogContent sx={{ pt: 2 }}>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="Goodreads Profile URL"
-            type="url"
-            fullWidth
-            variant="outlined"
-            value={goodreadsUrl}
-            onChange={(e) => setGoodreadsUrl(e.target.value)}
-            placeholder="https://www.goodreads.com/user/show/YOUR_ID"
-            error={!!error}
-            helperText={error}
-            sx={{ mt: 1 }}
-          />
-        </DialogContent>
-        <DialogActions sx={{ p: 3 }}>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleGoodreadsUrlSubmit} variant="contained">
-            Connect
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }

@@ -41,7 +41,7 @@ All log files should follow this format:
 `YYYY-MM-DD_category_description.md`
 
 Examples:
-- `2024-01-02_technical_api-rate-limiting.md`
-- `2024-01-02_decision_theme-structure.md`
-- `2024-01-02_issue_image-loading.md`
-- `2024-01-02_feature_goodreads-sync.md` 
+- `2025-01-02_technical_api-rate-limiting.md`
+- `2025-01-02_decision_theme-structure.md`
+- `2025-01-02_issue_image-loading.md`
+- `2025-01-02_feature_goodreads-sync.md` 
