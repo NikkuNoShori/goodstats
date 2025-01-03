@@ -131,7 +131,7 @@ const SignInForm = () => {
             border: '1px solid rgba(255, 255, 255, 0.1)',
           }}
         >
-          <Typography variant="h5" textAlign="center" fontWeight={600} mb={3}>
+          <Typography variant="h5" textAlign="center" fontWeight={600} mb={4}>
             Welcome Back
           </Typography>
 
@@ -144,44 +144,163 @@ const SignInForm = () => {
             </Alert>
           )}
 
-          <form onSubmit={handleSignIn}>
-            <TextField
-              fullWidth
-              label="Email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              sx={{ mb: 2 }}
-              required
-            />
+          <form 
+            onSubmit={handleSignIn}
+            id="login-form"
+            method="post"
+            autoComplete="on"
+          >
+            <Box sx={{ mb: 4 }}>
+              <TextField
+                fullWidth
+                label="Email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                sx={{ 
+                  '& .MuiInputBase-root': {
+                    bgcolor: 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: '8px',
+                    height: '52px',
+                    '&:hover': {
+                      bgcolor: 'rgba(255, 255, 255, 0.05)',
+                    },
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    transform: 'translate(14px, -24px) scale(0.75)',
+                    fontSize: '1.15rem',
+                    fontWeight: 500,
+                    letterSpacing: '0.02em',
+                    '&.Mui-focused': {
+                      color: '#8B5CF6',
+                    },
+                    '&.MuiFormLabel-filled, &.Mui-focused': {
+                      transform: 'translate(14px, -24px) scale(0.75)',
+                    },
+                    '& .MuiFormLabel-asterisk': {
+                      display: 'none',
+                    },
+                  },
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    '& legend': {
+                      width: '0px !important',
+                    },
+                  },
+                  '& input': {
+                    color: 'white',
+                    padding: '14px 16px',
+                    fontSize: '1.05rem',
+                  },
+                  '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
+                    '-webkit-box-shadow': '0 0 0 30px rgba(30, 41, 59, 0.8) inset !important',
+                    '-webkit-text-fill-color': 'white !important',
+                    'caret-color': 'white',
+                  },
+                }}
+                required
+                name="email"
+                id="email"
+                autoComplete="username email"
+                InputLabelProps={{
+                  shrink: true
+                }}
+                inputProps={{
+                  autoCapitalize: "none",
+                  form: "login-form"
+                }}
+              />
+            </Box>
 
-            <TextField
-              fullWidth
-              label="Password"
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={() => setShowPassword(!showPassword)}
-                      edge="end"
-                    >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{ mb: 3 }}
-            />
+            <Box sx={{ mb: 4 }}>
+              <TextField
+                fullWidth
+                label="Password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                name="password"
+                id="password"
+                autoComplete="current-password"
+                sx={{ 
+                  '& .MuiInputBase-root': {
+                    bgcolor: 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: '8px',
+                    height: '52px',
+                    '&:hover': {
+                      bgcolor: 'rgba(255, 255, 255, 0.05)',
+                    },
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    transform: 'translate(14px, -24px) scale(0.75)',
+                    fontSize: '1.15rem',
+                    fontWeight: 500,
+                    letterSpacing: '0.02em',
+                    '&.Mui-focused': {
+                      color: '#8B5CF6',
+                    },
+                    '&.MuiFormLabel-filled, &.Mui-focused': {
+                      transform: 'translate(14px, -24px) scale(0.75)',
+                    },
+                    '& .MuiFormLabel-asterisk': {
+                      display: 'none',
+                    },
+                  },
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    '& legend': {
+                      width: '0px !important',
+                    },
+                  },
+                  '& input': {
+                    color: 'white',
+                    padding: '14px 16px',
+                    fontSize: '1.05rem',
+                  },
+                  '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
+                    '-webkit-box-shadow': '0 0 0 30px rgba(30, 41, 59, 0.8) inset !important',
+                    '-webkit-text-fill-color': 'white !important',
+                    'caret-color': 'white',
+                  },
+                }}
+                InputLabelProps={{
+                  shrink: true
+                }}
+                inputProps={{
+                  form: "login-form"
+                }}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setShowPassword(!showPassword)}
+                        edge="end"
+                        aria-label={showPassword ? "hide password" : "show password"}
+                        tabIndex={-1}
+                        sx={{ 
+                          color: 'rgba(255, 255, 255, 0.7)',
+                          mr: 0.5
+                        }}
+                      >
+                        {showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            </Box>
 
             <Button
               type="submit"
               variant="contained"
               fullWidth
               disabled={isLoading}
+              form="login-form"
               sx={{
                 py: 1.5,
                 mb: 2,

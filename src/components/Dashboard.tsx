@@ -32,6 +32,7 @@ import {
   InputLabel
 } from '@mui/material';
 import { makeApiCall } from '../utils/api';
+import Header from './common/Header';
 
 interface Book {
   id?: number;
@@ -69,6 +70,7 @@ interface Stats {
   };
   topAuthors: Array<{ author: string; count: number }>;
   ratingDistribution: Record<string, number>;
+  ratedBooksCount: number;
 }
 
 interface BookCardProps {
@@ -288,6 +290,7 @@ export default function Dashboard() {
     queryKey: ['books', profile?.id],
     queryFn: async () => {
       if (!profile?.id) return [];
+      console.log('Fetching books for user:', profile.id);
       const { data, error } = await supabase
         .from('books')
         .select('*')
@@ -295,6 +298,13 @@ export default function Dashboard() {
         .order('updated_at', { ascending: false });
       
       if (error) throw error;
+      
+      // Log raw data before processing
+      console.log('Raw books data from Supabase:', data);
+      console.log('Books with ratings:', data?.filter(book => book.rating > 0).map(book => ({
+        title: book.title,
+        rating: book.rating
+      })));
       
       // More robust deduplication using a composite key
       const uniqueBooks = new Map();
@@ -305,14 +315,14 @@ export default function Dashboard() {
             new Date(book.updated_at) > new Date(uniqueBooks.get(key).updated_at)) {
           uniqueBooks.set(key, {
             ...book,
-            uniqueKey: key, // Add a stable unique key to each book
+            uniqueKey: key,
             shelves: book.shelves?.filter(shelf => shelf.toLowerCase() !== 'all') || []
           });
         }
       });
       
       const booksArray = Array.from(uniqueBooks.values());
-      console.log('Fetched unique books count:', booksArray.length);
+      console.log('Final processed books with ratings:', booksArray.filter(book => book.rating > 0).length);
       return booksArray;
     },
     enabled: !!profile?.id
@@ -614,17 +624,65 @@ export default function Dashboard() {
   // Calculate stats whenever books change
   useEffect(() => {
     if (!books?.length) {
+      console.log('No books available, setting stats to null');
       setStats(null);
       return;
     }
 
+    console.log('Calculating stats for', books.length, 'books');
+
+    // Calculate average rating properly
+    const ratedBooks = books.filter(book => typeof book.rating === 'number' && book.rating > 0);
+    console.log('Found rated books:', ratedBooks.map(book => ({
+      title: book.title,
+      rating: book.rating
+    })));
+
+    const averageRating = ratedBooks.length > 0 
+      ? ratedBooks.reduce((sum, book) => sum + book.rating, 0) / ratedBooks.length 
+      : 0;
+
+    console.log('Calculated average rating:', averageRating);
+    console.log('Number of rated books:', ratedBooks.length);
+
+    // Rest of the stats calculation...
     const totalBooks = books.length;
     const uniqueShelves = new Set(books.flatMap(book => book.shelves || []));
     const totalShelves = uniqueShelves.size;
     
-    // Calculate average rating
-    const totalRating = books.reduce((sum, book) => sum + (book.rating || 0), 0);
-    const averageRating = totalRating / books.filter(book => book.rating > 0).length;
+    // Calculate reading progress
+    const readingProgress = {
+      read: books.filter(book => 
+        book.shelves?.some(shelf => 
+          shelf.toLowerCase().includes('read') && 
+          !shelf.toLowerCase().includes('to-read') && 
+          !shelf.toLowerCase().includes('currently-reading')
+        )
+      ).length,
+      reading: books.filter(book => 
+        book.shelves?.some(shelf => 
+          shelf.toLowerCase().includes('currently-reading')
+        )
+      ).length,
+      toRead: books.filter(book => 
+        book.shelves?.some(shelf => 
+          shelf.toLowerCase().includes('to-read') || 
+          shelf.toLowerCase().includes('want-to-read')
+        )
+      ).length,
+      total: totalBooks
+    };
+
+    // Calculate rating distribution with proper filtering
+    const ratingDistribution: Record<string, number> = {
+      '1': 0, '2': 0, '3': 0, '4': 0, '5': 0
+    };
+    ratedBooks.forEach(book => {
+      const rating = Math.round(book.rating).toString();
+      if (rating in ratingDistribution) {
+        ratingDistribution[rating]++;
+      }
+    });
 
     // Calculate books per shelf
     const booksPerShelf: Record<string, number> = {};
@@ -633,14 +691,6 @@ export default function Dashboard() {
         booksPerShelf[shelf] = (booksPerShelf[shelf] || 0) + 1;
       });
     });
-
-    // Calculate reading progress
-    const readingProgress = {
-      read: books.filter(book => book.shelves?.includes('read')).length,
-      reading: books.filter(book => book.shelves?.includes('currently-reading')).length,
-      toRead: books.filter(book => book.shelves?.includes('to-read')).length,
-      total: totalBooks
-    };
 
     // Calculate top authors
     const authorCounts: Record<string, number> = {};
@@ -652,27 +702,24 @@ export default function Dashboard() {
       .slice(0, 5)
       .map(([author, count]) => ({ author, count }));
 
-    // Calculate rating distribution
-    const ratingDistribution: Record<string, number> = {};
-    books.forEach(book => {
-      if (book.rating) {
-        ratingDistribution[book.rating] = (ratingDistribution[book.rating] || 0) + 1;
-      }
-    });
-
-    setStats({
+    const newStats = {
       totalBooks,
       totalShelves,
       averageRating,
       booksPerShelf,
       readingProgress,
       topAuthors,
-      ratingDistribution
-    });
+      ratingDistribution,
+      ratedBooksCount: ratedBooks.length
+    };
+
+    console.log('Setting new stats:', newStats);
+    setStats(newStats);
   }, [books]);
 
-  // Add the Statistics Overview component
+  // Add debug logging to StatisticsOverview
   const StatisticsOverview = () => {
+    console.log('Rendering StatisticsOverview with stats:', stats);
     if (!stats) return null;
 
     return (
@@ -730,17 +777,19 @@ export default function Dashboard() {
             <Typography variant="h6" gutterBottom>Rating Overview</Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
               <Typography variant="h4" component="span" sx={{ mr: 1 }}>
-                {stats.averageRating.toFixed(1)}
+                {stats.averageRating > 0 ? stats.averageRating.toFixed(1) : 'No ratings'}
               </Typography>
-              <Rating 
-                value={stats.averageRating} 
-                readOnly 
-                precision={0.1}
-                sx={{ color: 'primary.main' }}
-              />
+              {stats.averageRating > 0 && (
+                <Rating 
+                  value={stats.averageRating} 
+                  readOnly 
+                  precision={0.1}
+                  sx={{ color: 'primary.main' }}
+                />
+              )}
             </Box>
             <Typography variant="body2" color="text.secondary">
-              Average rating across {stats.totalBooks} books
+              Average rating across {stats.ratedBooksCount} rated books
             </Typography>
           </Paper>
 
@@ -769,123 +818,22 @@ export default function Dashboard() {
 
   return (
     <Box sx={{ 
-      pt: '80px',
-      px: 3,
       minHeight: '100vh',
       bgcolor: 'background.default'
     }}>
-      {/* Fixed Header */}
-      <Box
-        component="header"
-        sx={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: '64px',
-          bgcolor: 'background.paper',
-          borderBottom: 1,
-          borderColor: 'divider',
-          zIndex: 1000,
-          px: 3,
-          display: 'flex',
-          alignItems: 'center'
-        }}
-      >
-        <Box sx={{ 
-          maxWidth: 1200, 
-          width: '100%', 
-          mx: 'auto', 
-          display: 'flex', 
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}>
-          {/* Logo and Title */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography
-              variant="h6"
-              component="div"
-              sx={{
-                fontWeight: 700,
-                color: 'primary.main',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1
-              }}
-            >
-              <Box sx={{ position: 'relative', width: '32px', height: '32px' }}>
-                <img 
-                  src="/src/assets/logo.png" 
-                  alt="" 
-                  style={{ 
-                    height: '100%',
-                    width: '100%',
-                    objectFit: 'contain'
-                  }}
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                    target.nextElementSibling?.classList.remove('hidden');
-                  }}
-                />
-                <Box
-                  className="logo-fallback hidden"
-                  sx={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    bgcolor: 'primary.main',
-                    color: 'primary.contrastText',
-                    borderRadius: '4px',
-                    fontSize: '16px',
-                    fontWeight: 700
-                  }}
-                >
-                  G
-                </Box>
-              </Box>
-              GoodStats
-            </Typography>
-          </Box>
-
-          {/* Navigation Buttons */}
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <Button
-              variant="text"
-              color="inherit"
-              sx={{ 
-                textTransform: 'none',
-                fontWeight: selectedShelf === 'all' ? 700 : 400
-              }}
-              onClick={() => setSelectedShelf('all')}
-            >
-              Dashboard
-            </Button>
-            <Button
-              variant="text"
-              color="inherit"
-              sx={{ textTransform: 'none' }}
-              onClick={() => setDialogOpen(true)}
-            >
-              Manage Goodreads
-            </Button>
-            <Button
-              variant="text"
-              color="inherit"
-              sx={{ textTransform: 'none' }}
-            >
-              Settings
-            </Button>
-          </Box>
-        </Box>
-      </Box>
-
-      <Box sx={{ maxWidth: 1200, mx: 'auto', py: 4 }}>
+      <Header 
+        onManageGoodreads={() => setDialogOpen(true)}
+        selectedShelf={selectedShelf}
+        onShelfSelect={setSelectedShelf}
+      />
+      
+      <Box sx={{ 
+        maxWidth: 1200, 
+        mx: 'auto', 
+        py: 4,
+        px: 3,
+        mt: '64px' // Add margin for fixed header
+      }}>
         {/* Header Section */}
         <Box sx={{ 
           display: 'flex', 
@@ -909,6 +857,15 @@ export default function Dashboard() {
                 color="error"
                 onClick={handleDisconnect}
                 disabled={isLoading}
+                sx={{
+                  borderColor: 'error.light',
+                  color: 'error.light',
+                  '&:hover': {
+                    borderColor: 'error.main',
+                    color: 'error.main',
+                    bgcolor: 'rgba(244, 67, 54, 0.08)'
+                  }
+                }}
               >
                 Disconnect
               </Button>

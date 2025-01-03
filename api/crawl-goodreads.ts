@@ -13,6 +13,7 @@ const TIMEOUT_MS = 180000; // Increase to 180 seconds (3 minutes)
 
 async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = TIMEOUT_MS) {
   const controller = new AbortController();
+  const startTime = performance.now();
   console.log(`Starting fetch with ${timeoutMs}ms timeout (${timeoutMs/1000} seconds)`);
   
   const timeout = setTimeout(() => {
@@ -24,9 +25,7 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
-      // Add keepalive to prevent premature connection closing
       keepalive: true,
-      // Increase timeout in headers
       headers: {
         ...options.headers,
         'Connection': 'keep-alive',
@@ -34,13 +33,18 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
         'Crawlbase-Request-Timeout': `${Math.floor(timeoutMs/1000)}`
       }
     });
-    console.log('Fetch completed successfully');
+    const endTime = performance.now();
+    const duration = endTime - startTime;
+    console.log(`Fetch completed successfully in ${duration.toFixed(2)}ms`);
     return response;
   } catch (error) {
+    const endTime = performance.now();
+    const duration = endTime - startTime;
     if (error instanceof Error && error.name === 'AbortError') {
-      console.error(`Request timed out after ${timeoutMs}ms`);
-      throw new Error(`Request timed out after ${timeoutMs}ms`);
+      console.error(`Request timed out after ${duration.toFixed(2)}ms`);
+      throw new Error(`Request timed out after ${duration.toFixed(2)}ms`);
     }
+    console.error(`Request failed after ${duration.toFixed(2)}ms:`, error);
     throw error;
   } finally {
     clearTimeout(timeout);

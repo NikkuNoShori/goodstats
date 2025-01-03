@@ -121,7 +121,7 @@ const SignUpForm = () => {
             border: '1px solid rgba(255, 255, 255, 0.1)',
           }}
         >
-          <Typography variant="h5" textAlign="center" fontWeight={600} mb={3}>
+          <Typography variant="h5" textAlign="center" fontWeight={600} mb={4}>
             Create Your Account
           </Typography>
 
@@ -134,73 +134,278 @@ const SignUpForm = () => {
             </Alert>
           )}
 
-          <form onSubmit={handleSignUp}>
-            <TextField
-              fullWidth
-              label="Email"
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              required
-              sx={{ mb: 2 }}
-            />
+          <form 
+            onSubmit={handleSignUp}
+            id="signup-form"
+            method="post"
+            autoComplete="on"
+          >
+            <Box sx={{ mb: 4 }}>
+              <TextField
+                fullWidth
+                label="Email"
+                type="email"
+                name="email"
+                value={formData.email}
+                onChange={handleChange}
+                required
+                sx={{ 
+                  '& .MuiInputBase-root': {
+                    bgcolor: 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: '8px',
+                    height: '52px',
+                    '&:hover': {
+                      bgcolor: 'rgba(255, 255, 255, 0.05)',
+                    },
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    transform: 'translate(14px, -24px) scale(0.75)',
+                    fontSize: '1.15rem',
+                    fontWeight: 500,
+                    letterSpacing: '0.02em',
+                    '&.Mui-focused': {
+                      color: '#8B5CF6',
+                    },
+                    '&.MuiFormLabel-filled, &.Mui-focused': {
+                      transform: 'translate(14px, -24px) scale(0.75)',
+                    },
+                    '& .MuiFormLabel-asterisk': {
+                      display: 'none',
+                    },
+                  },
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    '& legend': {
+                      width: '0px !important',
+                    },
+                  },
+                  '& input': {
+                    color: 'white',
+                    padding: '14px 16px',
+                    fontSize: '1.05rem',
+                  },
+                  '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
+                    '-webkit-box-shadow': '0 0 0 30px rgba(30, 41, 59, 0.8) inset !important',
+                    '-webkit-text-fill-color': 'white !important',
+                    'caret-color': 'white',
+                  },
+                }}
+                InputLabelProps={{
+                  shrink: true
+                }}
+                autoComplete="username email"
+              />
+            </Box>
 
-            <TextField
-              fullWidth
-              label="Username (optional)"
-              type="text"
-              name="username"
-              value={formData.username}
-              onChange={handleChange}
-              sx={{ mb: 2 }}
-            />
+            <Box sx={{ mb: 4 }}>
+              <TextField
+                fullWidth
+                label="Username (optional)"
+                type="text"
+                name="username"
+                value={formData.username}
+                onChange={handleChange}
+                sx={{ 
+                  '& .MuiInputBase-root': {
+                    bgcolor: 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: '8px',
+                    height: '52px',
+                    '&:hover': {
+                      bgcolor: 'rgba(255, 255, 255, 0.05)',
+                    },
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    transform: 'translate(14px, -24px) scale(0.75)',
+                    fontSize: '1.15rem',
+                    fontWeight: 500,
+                    letterSpacing: '0.02em',
+                    '&.Mui-focused': {
+                      color: '#8B5CF6',
+                    },
+                    '&.MuiFormLabel-filled, &.Mui-focused': {
+                      transform: 'translate(14px, -24px) scale(0.75)',
+                    },
+                  },
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    '& legend': {
+                      width: '0px !important',
+                    },
+                  },
+                  '& input': {
+                    color: 'white',
+                    padding: '14px 16px',
+                    fontSize: '1.05rem',
+                  },
+                  '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
+                    '-webkit-box-shadow': '0 0 0 30px rgba(30, 41, 59, 0.8) inset !important',
+                    '-webkit-text-fill-color': 'white !important',
+                    'caret-color': 'white',
+                  },
+                }}
+                InputLabelProps={{
+                  shrink: true
+                }}
+              />
+            </Box>
 
-            <TextField
-              fullWidth
-              label="Password"
-              type={showPassword ? 'text' : 'password'}
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              required
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={() => setShowPassword(!showPassword)}
-                      edge="end"
-                    >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{ mb: 2 }}
-            />
+            <Box sx={{ mb: 4 }}>
+              <TextField
+                fullWidth
+                label="Password"
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                required
+                sx={{ 
+                  '& .MuiInputBase-root': {
+                    bgcolor: 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: '8px',
+                    height: '52px',
+                    '&:hover': {
+                      bgcolor: 'rgba(255, 255, 255, 0.05)',
+                    },
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    transform: 'translate(14px, -24px) scale(0.75)',
+                    fontSize: '1.15rem',
+                    fontWeight: 500,
+                    letterSpacing: '0.02em',
+                    '&.Mui-focused': {
+                      color: '#8B5CF6',
+                    },
+                    '&.MuiFormLabel-filled, &.Mui-focused': {
+                      transform: 'translate(14px, -24px) scale(0.75)',
+                    },
+                    '& .MuiFormLabel-asterisk': {
+                      display: 'none',
+                    },
+                  },
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    '& legend': {
+                      width: '0px !important',
+                    },
+                  },
+                  '& input': {
+                    color: 'white',
+                    padding: '14px 16px',
+                    fontSize: '1.05rem',
+                  },
+                  '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
+                    '-webkit-box-shadow': '0 0 0 30px rgba(30, 41, 59, 0.8) inset !important',
+                    '-webkit-text-fill-color': 'white !important',
+                    'caret-color': 'white',
+                  },
+                }}
+                InputLabelProps={{
+                  shrink: true
+                }}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setShowPassword(!showPassword)}
+                        edge="end"
+                        aria-label={showPassword ? "hide password" : "show password"}
+                        tabIndex={-1}
+                        sx={{ 
+                          color: 'rgba(255, 255, 255, 0.7)',
+                          mr: 0.5
+                        }}
+                      >
+                        {showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+                autoComplete="new-password"
+              />
+            </Box>
 
-            <TextField
-              fullWidth
-              label="Confirm Password"
-              type={showConfirmPassword ? 'text' : 'password'}
-              name="confirmPassword"
-              value={formData.confirmPassword}
-              onChange={handleChange}
-              required
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      edge="end"
-                    >
-                      {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{ mb: 3 }}
-            />
+            <Box sx={{ mb: 4 }}>
+              <TextField
+                fullWidth
+                label="Confirm Password"
+                type={showConfirmPassword ? 'text' : 'password'}
+                name="confirmPassword"
+                value={formData.confirmPassword}
+                onChange={handleChange}
+                required
+                sx={{ 
+                  '& .MuiInputBase-root': {
+                    bgcolor: 'rgba(255, 255, 255, 0.03)',
+                    borderRadius: '8px',
+                    height: '52px',
+                    '&:hover': {
+                      bgcolor: 'rgba(255, 255, 255, 0.05)',
+                    },
+                  },
+                  '& .MuiInputLabel-root': {
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    transform: 'translate(14px, -24px) scale(0.75)',
+                    fontSize: '1.15rem',
+                    fontWeight: 500,
+                    letterSpacing: '0.02em',
+                    '&.Mui-focused': {
+                      color: '#8B5CF6',
+                    },
+                    '&.MuiFormLabel-filled, &.Mui-focused': {
+                      transform: 'translate(14px, -24px) scale(0.75)',
+                    },
+                    '& .MuiFormLabel-asterisk': {
+                      display: 'none',
+                    },
+                  },
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    '& legend': {
+                      width: '0px !important',
+                    },
+                  },
+                  '& input': {
+                    color: 'white',
+                    padding: '14px 16px',
+                    fontSize: '1.05rem',
+                  },
+                  '& input:-webkit-autofill, & input:-webkit-autofill:hover, & input:-webkit-autofill:focus': {
+                    '-webkit-box-shadow': '0 0 0 30px rgba(30, 41, 59, 0.8) inset !important',
+                    '-webkit-text-fill-color': 'white !important',
+                    'caret-color': 'white',
+                  },
+                }}
+                InputLabelProps={{
+                  shrink: true
+                }}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        edge="end"
+                        aria-label={showConfirmPassword ? "hide password" : "show password"}
+                        tabIndex={-1}
+                        sx={{ 
+                          color: 'rgba(255, 255, 255, 0.7)',
+                          mr: 0.5
+                        }}
+                      >
+                        {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+                autoComplete="new-password"
+              />
+            </Box>
 
             <Button
               type="submit"

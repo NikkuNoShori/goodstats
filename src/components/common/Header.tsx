@@ -1,12 +1,27 @@
-import { AppBar, Box, Button, Container, IconButton, Stack, Toolbar, Typography } from '@mui/material';
-import { Link, useNavigate } from 'react-router-dom';
+import { AppBar, Box, Button, Container, Stack, Toolbar } from '@mui/material';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../services/supabase';
 import { useProfile } from '../../hooks/useProfile';
+import Logo from './Logo';
 
-const Header = ({ isLandingPage = false, title = 'GoodStats' }) => {
+interface HeaderProps {
+  isLandingPage?: boolean;
+  onManageGoodreads?: () => void;
+  selectedShelf?: string;
+  onShelfSelect?: (shelf: string) => void;
+}
+
+const Header = ({ 
+  isLandingPage = false,
+  onManageGoodreads,
+  selectedShelf,
+  onShelfSelect
+}: HeaderProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { profile, isLoading } = useProfile();
   const isLoggedIn = !!profile?.id;
+  const isDashboard = location.pathname === '/dashboard';
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -14,58 +29,158 @@ const Header = ({ isLandingPage = false, title = 'GoodStats' }) => {
   };
 
   return (
-    <AppBar position="static" color="transparent" elevation={0}>
+    <AppBar 
+      position="fixed" 
+      color="transparent" 
+      elevation={0}
+      sx={{
+        bgcolor: 'background.paper',
+        borderBottom: 1,
+        borderColor: 'divider',
+        zIndex: 1100,
+        background: 'linear-gradient(180deg, rgba(30, 41, 59, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%)',
+        backdropFilter: 'blur(8px)'
+      }}
+    >
       <Container maxWidth="lg">
         <Toolbar disableGutters>
-          <Typography
-            variant="h6"
-            component={Link}
-            to="/"
-            sx={{
-              color: 'white',
-              textDecoration: 'none',
-              fontWeight: 'bold',
-              flexGrow: 1,
-            }}
-          >
-            {title}
-          </Typography>
+          <Logo 
+            size="medium" 
+            gradient={isLandingPage} 
+            linkTo={isLoggedIn ? '/dashboard' : '/'} 
+          />
+          <Box sx={{ flexGrow: 1 }} />
 
           {!isLoading && (
             <Stack direction="row" spacing={2}>
               {isLoggedIn ? (
-                <>
-                  <Button
-                    color="inherit"
-                    component={Link}
-                    to="/dashboard"
-                    sx={{ color: 'white' }}
-                  >
-                    Dashboard
-                  </Button>
-                  <Button
-                    color="inherit"
-                    component={Link}
-                    to="/manage-goodreads"
-                    sx={{ color: 'white' }}
-                  >
-                    Manage Goodreads
-                  </Button>
-                  <Button
-                    color="inherit"
-                    onClick={handleLogout}
-                    sx={{ color: 'white' }}
-                  >
-                    Logout
-                  </Button>
-                </>
+                isDashboard ? (
+                  // Dashboard-specific navigation
+                  <>
+                    <Button
+                      variant="text"
+                      color="inherit"
+                      sx={{ 
+                        textTransform: 'none',
+                        fontWeight: selectedShelf === 'all' ? 700 : 400,
+                        color: 'white',
+                        opacity: 0.9,
+                        '&:hover': {
+                          opacity: 1
+                        }
+                      }}
+                      onClick={() => onShelfSelect?.('all')}
+                    >
+                      Dashboard
+                    </Button>
+                    <Button
+                      variant="text"
+                      color="inherit"
+                      sx={{ 
+                        textTransform: 'none', 
+                        color: 'white',
+                        opacity: 0.9,
+                        '&:hover': {
+                          opacity: 1
+                        }
+                      }}
+                      onClick={onManageGoodreads}
+                    >
+                      Manage Goodreads
+                    </Button>
+                    <Button
+                      variant="text"
+                      color="inherit"
+                      component={Link}
+                      to="/settings"
+                      sx={{ 
+                        textTransform: 'none', 
+                        color: 'white',
+                        opacity: 0.9,
+                        '&:hover': {
+                          opacity: 1
+                        }
+                      }}
+                    >
+                      Settings
+                    </Button>
+                    <Button
+                      color="error"
+                      variant="text"
+                      onClick={handleLogout}
+                      sx={{ 
+                        color: 'error.light',
+                        '&:hover': {
+                          color: 'error.main',
+                          bgcolor: 'error.dark',
+                          bgcolor: 'rgba(244, 67, 54, 0.08)'
+                        }
+                      }}
+                    >
+                      Logout
+                    </Button>
+                  </>
+                ) : (
+                  // Regular logged-in navigation
+                  <>
+                    <Button
+                      color="inherit"
+                      component={Link}
+                      to="/dashboard"
+                      sx={{ 
+                        color: 'white',
+                        opacity: 0.9,
+                        '&:hover': {
+                          opacity: 1
+                        }
+                      }}
+                    >
+                      Dashboard
+                    </Button>
+                    <Button
+                      color="inherit"
+                      component={Link}
+                      to="/manage-goodreads"
+                      sx={{ 
+                        color: 'white',
+                        opacity: 0.9,
+                        '&:hover': {
+                          opacity: 1
+                        }
+                      }}
+                    >
+                      Manage Goodreads
+                    </Button>
+                    <Button
+                      color="error"
+                      variant="text"
+                      onClick={handleLogout}
+                      sx={{ 
+                        color: 'error.light',
+                        '&:hover': {
+                          color: 'error.main',
+                          bgcolor: 'error.dark',
+                          bgcolor: 'rgba(244, 67, 54, 0.08)'
+                        }
+                      }}
+                    >
+                      Logout
+                    </Button>
+                  </>
+                )
               ) : !isLandingPage && (
                 <>
                   <Button
                     color="inherit"
                     component={Link}
                     to="/signin"
-                    sx={{ color: 'white' }}
+                    sx={{ 
+                      color: 'white',
+                      opacity: 0.9,
+                      '&:hover': {
+                        opacity: 1
+                      }
+                    }}
                   >
                     Sign In
                   </Button>
